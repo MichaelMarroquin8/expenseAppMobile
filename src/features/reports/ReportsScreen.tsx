@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatMoney, monthKey } from '../../core/utils/format';
@@ -14,6 +15,7 @@ const weekBucket = (dateIso: string): string => {
 
 export function ReportsScreen() {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
   const current = monthKey();
@@ -32,7 +34,9 @@ export function ReportsScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
+      >
         <SectionTitle title="Reportes" subtitle="Ingresos vs gastos, categoría y tendencia" />
 
         <PremiumCard>

@@ -3,11 +3,21 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { monthKey } from '../core/utils/format';
 import { parseSms, isLikelyDuplicate } from '../domain/smsParser';
-import { AppSettings, Budget, PaymentCard, SavingsGoal, SmsDetection, Transaction } from '../domain/models';
+import {
+  AppSettings,
+  Budget,
+  FinanceAccount,
+  PaymentCard,
+  SavingsGoal,
+  SmsDetection,
+  Transaction,
+} from '../domain/models';
 
 interface FinanceState {
   onboardingDone: boolean;
   transactions: Transaction[];
+  transactionCategories: string[];
+  accounts: FinanceAccount[];
   budgets: Budget[];
   goals: SavingsGoal[];
   cards: PaymentCard[];
@@ -15,6 +25,8 @@ interface FinanceState {
   settings: AppSettings;
   finishOnboarding: () => void;
   addTransaction: (payload: Omit<Transaction, 'id'>) => void;
+  addTransactionCategory: (category: string) => void;
+  upsertAccount: (account: FinanceAccount) => void;
   updateTransaction: (id: string, payload: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   setBudget: (budget: Budget) => void;
@@ -50,6 +62,36 @@ const seedCards: PaymentCard[] = [
     last4: '8844',
     color: '#2563EB',
     icon: 'wallet-outline',
+  },
+];
+
+const seedAccounts: FinanceAccount[] = [
+  {
+    id: 'acc_bancolombia',
+    name: 'Bancolombia Ahorros',
+    provider: 'Bancolombia',
+    kind: 'bank',
+    balance: 1200000,
+    currency: 'COP',
+    color: '#F59E0B',
+  },
+  {
+    id: 'acc_nequi',
+    name: 'Nequi Principal',
+    provider: 'Nequi',
+    kind: 'wallet',
+    balance: 350000,
+    currency: 'COP',
+    color: '#A855F7',
+  },
+  {
+    id: 'acc_broker',
+    name: 'Portafolio acciones',
+    provider: 'Trii',
+    kind: 'investment',
+    balance: 2100000,
+    currency: 'COP',
+    color: '#10B981',
   },
 ];
 
@@ -105,13 +147,23 @@ const seedBudgets: Budget[] = [
   { id: 'budget_transport', category: 'Transporte', limit: 200, monthKey: currentMonth },
 ];
 
+const defaultTransactionCategories = [
+  'Comida',
+  'Transporte',
+  'Supermercado',
+  'Entretenimiento',
+  'Servicios',
+  'Salario',
+  'Otros',
+];
+
 const seedGoals: SavingsGoal[] = [
   { id: 'goal_1', title: 'Fondo de emergencia', targetAmount: 3000, currentAmount: 900 },
   { id: 'goal_2', title: 'Vacaciones', targetAmount: 1400, currentAmount: 460, autoContribution: 75 },
 ];
 
 const initialSettings: AppSettings = {
-  currency: 'USD',
+  currency: 'COP',
   colorScheme: 'system',
   remindersEnabled: true,
 };
@@ -124,11 +176,30 @@ const coerceBoolean = (value: unknown, fallback: boolean): boolean => {
   return fallback;
 };
 
+const applyAccountMovement = (
+  accounts: FinanceAccount[],
+  transaction: { accountId?: string; type: Transaction['type']; amount: number },
+  mode: 'apply' | 'revert' = 'apply',
+): FinanceAccount[] => {
+  if (!transaction.accountId) return accounts;
+  return accounts.map((account) => {
+    if (account.id !== transaction.accountId) return account;
+    const direction = transaction.type === 'expense' ? -1 : 1;
+    const signedAmount = direction * transaction.amount * (mode === 'apply' ? 1 : -1);
+    return {
+      ...account,
+      balance: Math.max(account.balance + signedAmount, 0),
+    };
+  });
+};
+
 export const useFinanceStore = create<FinanceState>()(
   persist(
     (set, get) => ({
       onboardingDone: false,
       transactions: seedTransactions,
+      transactionCategories: defaultTransactionCategories,
+      accounts: seedAccounts,
       budgets: seedBudgets,
       goals: seedGoals,
       cards: seedCards,
@@ -138,13 +209,37 @@ export const useFinanceStore = create<FinanceState>()(
       addTransaction: (payload) =>
         set((state) => ({
           transactions: [{ ...payload, id: createId('tx') }, ...state.transactions],
+          accounts: applyAccountMovement(state.accounts, payload, 'apply'),
+        })),
+      addTransactionCategory: (category) =>
+        set((state) => {
+          const normalized = category.trim();
+          if (!normalized) return state;
+          const alreadyExists = state.transactionCategories.some(
+            (item) => item.toLowerCase() === normalized.toLowerCase(),
+          );
+          if (alreadyExists) return state;
+          return {
+            transactionCategories: [...state.transactionCategories, normalized],
+          };
+        }),
+      upsertAccount: (account) =>
+        set((state) => ({
+          accounts: [...state.accounts.filter((item) => item.id !== account.id), account],
         })),
       updateTransaction: (id, payload) =>
         set((state) => ({
           transactions: state.transactions.map((tx) => (tx.id === id ? { ...tx, ...payload } : tx)),
         })),
       deleteTransaction: (id) =>
-        set((state) => ({ transactions: state.transactions.filter((tx) => tx.id !== id) })),
+        set((state) => {
+          const target = state.transactions.find((tx) => tx.id === id);
+          if (!target) return state;
+          return {
+            transactions: state.transactions.filter((tx) => tx.id !== id),
+            accounts: applyAccountMovement(state.accounts, target, 'revert'),
+          };
+        }),
       setBudget: (budget) =>
         set((state) => ({
           budgets: [...state.budgets.filter((item) => item.id !== budget.id), budget],
@@ -253,12 +348,22 @@ export const useFinanceStore = create<FinanceState>()(
           ...currentState,
           ...persisted,
           onboardingDone: coerceBoolean(persisted.onboardingDone, currentState.onboardingDone),
+          transactionCategories:
+            Array.isArray(persisted.transactionCategories) && persisted.transactionCategories.length > 0
+              ? persisted.transactionCategories
+              : currentState.transactionCategories,
+          accounts:
+            Array.isArray(persisted.accounts) && persisted.accounts.length > 0
+              ? persisted.accounts
+              : currentState.accounts,
           settings: safeSettings,
         };
       },
       partialize: (state) => ({
         onboardingDone: state.onboardingDone,
         transactions: state.transactions,
+        transactionCategories: state.transactionCategories,
+        accounts: state.accounts,
         budgets: state.budgets,
         goals: state.goals,
         cards: state.cards,

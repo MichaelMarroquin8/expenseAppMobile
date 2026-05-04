@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { formatMoney, formatShortDate, monthKey } from '../../core/utils/format';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
@@ -16,6 +17,7 @@ const Stat = ({ label, value, color }: { label: string; value: string; color: st
 
 export function DashboardScreen() {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
   const summary = useMemo(() => {
@@ -55,10 +57,11 @@ export function DashboardScreen() {
 
   const categoryEntries = Object.entries(summary.categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxCategory = categoryEntries[0]?.[1] ?? 1;
+  const bottomOverlaySpacing = Math.max(insets.bottom + 170, 190);
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: bottomOverlaySpacing }]}>
         <SectionTitle title="Dashboard financiero" subtitle="Vista de tu salud financiera en tiempo real" />
 
         <PremiumCard>
@@ -139,7 +142,6 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 30,
   },
   balanceLabel: {
     fontSize: 14,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatMoney } from '../../core/utils/format';
@@ -7,13 +8,16 @@ import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function GoalsScreen() {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const goals = useFinanceStore((state) => state.goals);
   const currency = useFinanceStore((state) => state.settings.currency);
   const addContribution = useFinanceStore((state) => state.addGoalContribution);
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
+      >
         <SectionTitle title="Metas de ahorro" subtitle="Aportes manuales o automáticos" />
         {goals.map((goal) => {
           const progress = Math.min(100, (goal.currentAmount / Math.max(goal.targetAmount, 1)) * 100);

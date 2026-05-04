@@ -1,16 +1,20 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function CardsScreen() {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const cards = useFinanceStore((state) => state.cards);
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
+      >
         <SectionTitle title="Tarjetas y métodos de pago" subtitle="Solo se guardan últimos 4 dígitos" />
         {cards.map((card) => (
           <PremiumCard key={card.id} style={{ backgroundColor: `${card.color}18` }}>

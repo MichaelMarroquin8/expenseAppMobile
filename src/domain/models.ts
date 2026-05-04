@@ -1,6 +1,7 @@
 export type EntryType = 'income' | 'expense';
 
 export type CardType = 'credit' | 'debit';
+export type AccountKind = 'bank' | 'wallet' | 'investment' | 'cash' | 'broker';
 
 export type BudgetStatus = 'safe' | 'warning' | 'over';
 
@@ -28,11 +29,22 @@ export interface Transaction {
   tags: string[];
   paymentMethod: 'cash' | 'transfer' | 'card' | 'wallet';
   cardId?: string;
+  accountId?: string;
   merchant: string;
   occurredAt: string;
   recurring: boolean;
   recurringRule?: 'daily' | 'weekly' | 'monthly';
   source: 'manual' | 'sms';
+}
+
+export interface FinanceAccount {
+  id: string;
+  name: string;
+  provider: string;
+  kind: AccountKind;
+  balance: number;
+  currency: string;
+  color: string;
 }
 
 export interface Budget {
