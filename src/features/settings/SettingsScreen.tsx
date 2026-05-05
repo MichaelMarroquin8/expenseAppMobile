@@ -87,6 +87,9 @@ export function SettingsScreen() {
             <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Accounts')}>
               <Text style={[styles.linkText, { color: theme.text }]}>Cuentas</Text>
             </Pressable>
+            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Categories')}>
+              <Text style={[styles.linkText, { color: theme.text }]}>Categorías</Text>
+            </Pressable>
           </View>
         </PremiumCard>
       </ScrollView>

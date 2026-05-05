@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { monthKey } from '../core/utils/format';
-import { parseSms, isLikelyDuplicate } from '../domain/smsParser';
+import { parseSms, isLikelyDuplicate, SmsRawInput } from '../domain/smsParser';
 import {
   AppSettings,
   Budget,
@@ -17,6 +17,7 @@ interface FinanceState {
   onboardingDone: boolean;
   transactions: Transaction[];
   transactionCategories: string[];
+  categoryIcons: Record<string, string>;
   accounts: FinanceAccount[];
   budgets: Budget[];
   goals: SavingsGoal[];
@@ -26,14 +27,17 @@ interface FinanceState {
   finishOnboarding: () => void;
   addTransaction: (payload: Omit<Transaction, 'id'>) => void;
   addTransactionCategory: (category: string) => void;
+  removeTransactionCategory: (category: string) => void;
+  setCategoryIcon: (category: string, icon: string) => void;
   upsertAccount: (account: FinanceAccount) => void;
   updateTransaction: (id: string, payload: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   setBudget: (budget: Budget) => void;
+  deleteBudget: (id: string) => void;
   upsertGoal: (goal: SavingsGoal) => void;
   addGoalContribution: (goalId: string, amount: number) => void;
   upsertCard: (card: PaymentCard) => void;
-  processSmsBatch: (messages: string[]) => void;
+  processSmsBatch: (messages: SmsRawInput[]) => void;
   acceptSms: (detectionId: string) => void;
   discardSms: (detectionId: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
@@ -157,6 +161,16 @@ const defaultTransactionCategories = [
   'Otros',
 ];
 
+const defaultCategoryIcons: Record<string, string> = {
+  Comida: 'fast-food-outline',
+  Transporte: 'car-outline',
+  Supermercado: 'basket-outline',
+  Entretenimiento: 'game-controller-outline',
+  Servicios: 'flash-outline',
+  Salario: 'cash-outline',
+  Otros: 'apps-outline',
+};
+
 const seedGoals: SavingsGoal[] = [
   { id: 'goal_1', title: 'Fondo de emergencia', targetAmount: 3000, currentAmount: 900 },
   { id: 'goal_2', title: 'Vacaciones', targetAmount: 1400, currentAmount: 460, autoContribution: 75 },
@@ -178,9 +192,28 @@ const coerceBoolean = (value: unknown, fallback: boolean): boolean => {
 
 const applyAccountMovement = (
   accounts: FinanceAccount[],
-  transaction: { accountId?: string; type: Transaction['type']; amount: number },
+  transaction: {
+    accountId?: string;
+    destinationAccountId?: string;
+    type: Transaction['type'];
+    amount: number;
+  },
   mode: 'apply' | 'revert' = 'apply',
 ): FinanceAccount[] => {
+  if (transaction.type === 'transfer') {
+    if (!transaction.accountId || !transaction.destinationAccountId) return accounts;
+    const factor = mode === 'apply' ? 1 : -1;
+    return accounts.map((account) => {
+      if (account.id === transaction.accountId) {
+        return { ...account, balance: Math.max(account.balance - transaction.amount * factor, 0) };
+      }
+      if (account.id === transaction.destinationAccountId) {
+        return { ...account, balance: Math.max(account.balance + transaction.amount * factor, 0) };
+      }
+      return account;
+    });
+  }
+
   if (!transaction.accountId) return accounts;
   return accounts.map((account) => {
     if (account.id !== transaction.accountId) return account;
@@ -199,6 +232,7 @@ export const useFinanceStore = create<FinanceState>()(
       onboardingDone: false,
       transactions: seedTransactions,
       transactionCategories: defaultTransactionCategories,
+      categoryIcons: defaultCategoryIcons,
       accounts: seedAccounts,
       budgets: seedBudgets,
       goals: seedGoals,
@@ -221,8 +255,30 @@ export const useFinanceStore = create<FinanceState>()(
           if (alreadyExists) return state;
           return {
             transactionCategories: [...state.transactionCategories, normalized],
+            categoryIcons: {
+              ...state.categoryIcons,
+              [normalized]: 'pricetag-outline',
+            },
           };
         }),
+      removeTransactionCategory: (category) =>
+        set((state) => {
+          const protectedCategories = ['Otros', 'Salario'];
+          if (protectedCategories.includes(category)) return state;
+          return {
+            transactionCategories: state.transactionCategories.filter((item) => item !== category),
+            categoryIcons: Object.fromEntries(
+              Object.entries(state.categoryIcons).filter(([key]) => key !== category),
+            ),
+          };
+        }),
+      setCategoryIcon: (category, icon) =>
+        set((state) => ({
+          categoryIcons: {
+            ...state.categoryIcons,
+            [category]: icon,
+          },
+        })),
       upsertAccount: (account) =>
         set((state) => ({
           accounts: [...state.accounts.filter((item) => item.id !== account.id), account],
@@ -244,6 +300,10 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           budgets: [...state.budgets.filter((item) => item.id !== budget.id), budget],
         })),
+      deleteBudget: (id) =>
+        set((state) => ({
+          budgets: state.budgets.filter((item) => item.id !== id),
+        })),
       upsertGoal: (goal) =>
         set((state) => ({
           goals: [...state.goals.filter((item) => item.id !== goal.id), goal],
@@ -262,8 +322,8 @@ export const useFinanceStore = create<FinanceState>()(
         })),
       processSmsBatch: (messages) =>
         set((state) => {
-          const detections = messages.map((message) => {
-            const parsed = parseSms(message);
+          const detections = messages.map((input) => {
+            const parsed = parseSms(input);
             const card = state.cards.find((item) => item.last4 === parsed.last4);
             const candidate: SmsDetection = {
               ...parsed,
@@ -352,6 +412,10 @@ export const useFinanceStore = create<FinanceState>()(
             Array.isArray(persisted.transactionCategories) && persisted.transactionCategories.length > 0
               ? persisted.transactionCategories
               : currentState.transactionCategories,
+          categoryIcons: {
+            ...defaultCategoryIcons,
+            ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
+          },
           accounts:
             Array.isArray(persisted.accounts) && persisted.accounts.length > 0
               ? persisted.accounts
@@ -363,6 +427,7 @@ export const useFinanceStore = create<FinanceState>()(
         onboardingDone: state.onboardingDone,
         transactions: state.transactions,
         transactionCategories: state.transactionCategories,
+        categoryIcons: state.categoryIcons,
         accounts: state.accounts,
         budgets: state.budgets,
         goals: state.goals,

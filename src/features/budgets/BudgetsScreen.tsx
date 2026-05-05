@@ -7,12 +7,13 @@ import { formatAmountInput, formatMoney, monthKey, parseAmountInput } from '../.
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function BudgetsScreen() {
-  const { theme } = useAppTheme();
+  const { theme, activeMode } = useAppTheme();
   const insets = useSafeAreaInsets();
   const currency = useFinanceStore((state) => state.settings.currency);
   const budgets = useFinanceStore((state) => state.budgets);
   const categories = useFinanceStore((state) => state.transactionCategories);
   const setBudget = useFinanceStore((state) => state.setBudget);
+  const deleteBudget = useFinanceStore((state) => state.deleteBudget);
   const tx = useFinanceStore((state) => state.transactions);
   const current = monthKey();
   const [selectedCategory, setSelectedCategory] = useState('GLOBAL');
@@ -23,12 +24,18 @@ export function BudgetsScreen() {
     () => ['GLOBAL', ...categories.filter((item) => item.toLowerCase() !== 'salario')],
     [categories],
   );
-  const budgetsThisMonth = budgets.filter((item) => item.monthKey === current);
+  const budgetsThisMonth = useMemo(
+    () => budgets.filter((item) => item.monthKey === current),
+    [budgets, current],
+  );
+  const selectedBudget = useMemo(
+    () => budgetsThisMonth.find((item) => item.category === selectedCategory),
+    [budgetsThisMonth, selectedCategory],
+  );
 
   useEffect(() => {
-    const existing = budgetsThisMonth.find((item) => item.category === selectedCategory);
-    setLimitRaw(existing ? String(existing.limit) : '');
-  }, [selectedCategory, budgetsThisMonth]);
+    setLimitRaw(selectedBudget ? String(selectedBudget.limit) : '');
+  }, [selectedCategory, selectedBudget?.id, selectedBudget?.limit]);
 
   const onSaveBudget = () => {
     const limit = Number(limitRaw);
@@ -77,6 +84,7 @@ export function BudgetsScreen() {
             placeholder="Límite del presupuesto"
             placeholderTextColor={theme.textMuted}
             keyboardType="decimal-pad"
+            keyboardAppearance={activeMode === 'dark' ? 'dark' : 'light'}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
           <Pressable style={[styles.saveButton, { backgroundColor: theme.primary }]} onPress={onSaveBudget}>
@@ -104,11 +112,13 @@ export function BudgetsScreen() {
               return (
                 <BudgetCard
                   key={budget.id}
+                  budgetId={budget.id}
                   title={budget.category === 'GLOBAL' ? 'Presupuesto global' : budget.category}
                   spent={spent}
                   limit={budget.limit}
                   currency={currency}
                   color={budget.category === 'GLOBAL' ? theme.primary : theme.success}
+                  onDelete={deleteBudget}
                 />
               );
             })
@@ -119,17 +129,21 @@ export function BudgetsScreen() {
 }
 
 function BudgetCard({
+  budgetId,
   title,
   spent,
   limit,
   currency,
   color,
+  onDelete,
 }: {
+  budgetId: string;
   title: string;
   spent: number;
   limit: number;
   currency: string;
   color: string;
+  onDelete: (id: string) => void;
 }) {
   const { theme } = useAppTheme();
   const progress = Math.min(100, (spent / Math.max(1, limit)) * 100);
@@ -148,6 +162,9 @@ function BudgetCard({
       <View style={[styles.track, { backgroundColor: theme.border }]}>
         <View style={[styles.fill, { width: `${Math.max(2, progress)}%`, backgroundColor: statusColor }]} />
       </View>
+      <Pressable onPress={() => onDelete(budgetId)}>
+        <Text style={[styles.deleteText, { color: theme.warning }]}>Eliminar presupuesto</Text>
+      </Pressable>
     </PremiumCard>
   );
 }
@@ -177,5 +194,6 @@ const styles = StyleSheet.create({
   value: { marginBottom: 10, fontSize: 13 },
   track: { borderRadius: 999, height: 10, overflow: 'hidden' },
   fill: { height: 10 },
+  deleteText: { marginTop: 10, fontSize: 12, fontWeight: '600' },
   emptyText: { fontSize: 13 },
 });

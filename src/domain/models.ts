@@ -1,4 +1,4 @@
-export type EntryType = 'income' | 'expense';
+export type EntryType = 'income' | 'expense' | 'transfer';
 
 export type CardType = 'credit' | 'debit';
 export type AccountKind = 'bank' | 'wallet' | 'investment' | 'cash' | 'broker';
@@ -30,6 +30,7 @@ export interface Transaction {
   paymentMethod: 'cash' | 'transfer' | 'card' | 'wallet';
   cardId?: string;
   accountId?: string;
+  destinationAccountId?: string;
   merchant: string;
   occurredAt: string;
   recurring: boolean;
@@ -65,6 +66,9 @@ export interface SavingsGoal {
 
 export interface SmsDetection {
   id: string;
+  sender?: string;
+  trustedSource: boolean;
+  channel: 'sms' | 'email';
   rawMessage: string;
   bank?: string;
   amount?: number;

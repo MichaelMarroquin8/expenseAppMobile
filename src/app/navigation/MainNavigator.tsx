@@ -18,6 +18,7 @@ import { GoalsScreen } from "../../features/goals/GoalsScreen";
 import { ReportsScreen } from "../../features/reports/ReportsScreen";
 import { CardsScreen } from "../../features/cards/CardsScreen";
 import { AccountsScreen } from "../../features/accounts/AccountsScreen";
+import { CategoriesScreen } from "../../features/categories";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { QuickAddTransactionModal } from "../../features/transactions/QuickAddTransactionModal";
 
@@ -27,6 +28,7 @@ type RootStackParamList = {
   Reports: undefined;
   Cards: undefined;
   Accounts: undefined;
+  Categories: undefined;
 };
 
 export type TabParamList = {
@@ -59,7 +61,6 @@ function Tabs() {
             paddingTop: 6,
             marginBottom: 5,
             borderRadius: 18,
-            marginHorizontal: 10,
             position: "absolute",
           },
           tabBarIcon: ({ color, size }) => {
@@ -179,6 +180,11 @@ export function MainNavigator() {
           name="Accounts"
           component={AccountsScreen}
           options={{ title: "Cuentas" }}
+        />
+        <Stack.Screen
+          name="Categories"
+          component={CategoriesScreen}
+          options={{ title: "Categorías" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

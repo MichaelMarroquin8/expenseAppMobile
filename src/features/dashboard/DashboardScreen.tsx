@@ -34,7 +34,7 @@ export function DashboardScreen() {
       .reduce((acc, tx) => acc + tx.amount, 0);
     const savings = income - expenses;
     const balance = transactions.reduce(
-      (acc, tx) => acc + (tx.type === 'income' ? tx.amount : -tx.amount),
+      (acc, tx) => acc + (tx.type === 'income' ? tx.amount : tx.type === 'expense' ? -tx.amount : 0),
       0,
     );
     const categoryTotals = txThisMonth
@@ -127,8 +127,13 @@ export function DashboardScreen() {
                   {tx.category} • {formatShortDate(tx.occurredAt)}
                 </Text>
               </View>
-              <Text style={[styles.amount, { color: tx.type === 'income' ? theme.success : theme.danger }]}>
-                {tx.type === 'income' ? '+' : '-'}
+              <Text
+                style={[
+                  styles.amount,
+                  { color: tx.type === 'income' ? theme.success : tx.type === 'expense' ? theme.danger : theme.primary },
+                ]}
+              >
+                {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
                 {formatMoney(tx.amount, currency)}
               </Text>
             </View>

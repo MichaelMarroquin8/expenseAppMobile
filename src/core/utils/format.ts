@@ -14,6 +14,9 @@ const CURRENCY_FORMAT_CONFIG: Record<string, { locale: string; maximumFractionDi
 const getCurrencyConfig = (currency: string) =>
   CURRENCY_FORMAT_CONFIG[currency] ?? { locale: 'es-CO', maximumFractionDigits: 2 };
 
+export const getCurrencyFractionDigits = (currency = 'COP'): number =>
+  getCurrencyConfig(currency).maximumFractionDigits;
+
 const FALLBACK_SEPARATORS: Record<string, { group: string; decimal: string }> = {
   'es-CO': { group: '.', decimal: ',' },
   'es-MX': { group: ',', decimal: '.' },
