@@ -31,11 +31,18 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+.env.development
+.env.production
+.env.test
+.env.example
 
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# Carpetas nativas generadas por prebuild: las incluimos en git porque hay
+# código nativo custom (p. ej. BancolombiaSmsBridge). Si vuelves a managed puro,
+# puedes ignorarlas de nuevo.
+# /ios
+# /android

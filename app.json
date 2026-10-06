@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.michart.ExpenseApp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -36,6 +40,9 @@
         "projectId": "154fd540-fcb5-43db-ae3f-6c3ca2ca0a9b"
       }
     },
-    "owner": "michart"
+    "owner": "michart",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

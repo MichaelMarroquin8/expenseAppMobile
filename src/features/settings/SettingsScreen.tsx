@@ -4,12 +4,14 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
+import { useAuth } from '../auth/AuthProvider';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function SettingsScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const { user, isConfigured, signOutCurrent } = useAuth();
   const settings = useFinanceStore((state) => state.settings);
   const updateSettings = useFinanceStore((state) => state.updateSettings);
   const supportedCurrencies = ['COP', 'USD', 'MXN', 'EUR', 'PEN', 'CLP', 'ARS'];
@@ -20,6 +22,21 @@ export function SettingsScreen() {
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
         <SectionTitle title="Configuración" subtitle="Preferencias, modo oscuro y autenticación local futura" />
+
+        {isConfigured ? (
+          <PremiumCard>
+            <Text style={[styles.title, { color: theme.text }]}>Cuenta</Text>
+            <Text style={[styles.note, { color: theme.textMuted }]}>
+              {user?.email ?? 'Usuario autenticado'}
+            </Text>
+            <Pressable
+              style={[styles.linkButton, { borderColor: theme.border, marginTop: 8 }]}
+              onPress={() => signOutCurrent()}
+            >
+              <Text style={[styles.linkText, { color: theme.warning }]}>Cerrar sesión</Text>
+            </Pressable>
+          </PremiumCard>
+        ) : null}
 
         <PremiumCard>
           <Text style={[styles.title, { color: theme.text }]}>Tema</Text>
