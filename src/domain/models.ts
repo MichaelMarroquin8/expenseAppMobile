@@ -35,7 +35,7 @@ export interface Transaction {
   occurredAt: string;
   recurring: boolean;
   recurringRule?: 'daily' | 'weekly' | 'monthly';
-  source: 'manual' | 'sms';
+  source: 'manual' | 'sms' | 'notification';
 }
 
 export interface FinanceAccount {
@@ -68,7 +68,7 @@ export interface SmsDetection {
   id: string;
   sender?: string;
   trustedSource: boolean;
-  channel: 'sms' | 'email';
+  channel: 'sms' | 'email' | 'notification';
   rawMessage: string;
   bank?: string;
   amount?: number;

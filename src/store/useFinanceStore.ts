@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { monthKey } from '../core/utils/format';
 import { parseSms, isLikelyDuplicate, SmsRawInput } from '../domain/smsParser';
+import {
+  NotificationRawInput,
+  parseWalletNotification,
+} from '../domain/notificationParser';
 import {
   AppSettings,
   Budget,
@@ -12,6 +15,17 @@ import {
   SmsDetection,
   Transaction,
 } from '../domain/models';
+
+const mergeDetections = (
+  incoming: SmsDetection[],
+  existing: SmsDetection[],
+): SmsDetection[] => {
+  const merged = [...incoming, ...existing];
+  const unique = merged.filter(
+    (item, index) => merged.findIndex((other) => other.id === item.id) === index,
+  );
+  return unique.slice(0, 80);
+};
 
 interface FinanceState {
   onboardingDone: boolean;
@@ -38,118 +52,11 @@ interface FinanceState {
   addGoalContribution: (goalId: string, amount: number) => void;
   upsertCard: (card: PaymentCard) => void;
   processSmsBatch: (messages: SmsRawInput[]) => void;
+  processNotificationBatch: (notifications: NotificationRawInput[]) => void;
   acceptSms: (detectionId: string) => void;
   discardSms: (detectionId: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
 }
-
-const currentMonth = monthKey();
-
-const seedCards: PaymentCard[] = [
-  {
-    id: 'card_1',
-    alias: 'Nu Principal',
-    bank: 'Nu',
-    cardType: 'credit',
-    last4: '4421',
-    color: '#8B5CF6',
-    icon: 'card-outline',
-    limit: 22000,
-    statementDay: 23,
-    dueDay: 8,
-  },
-  {
-    id: 'card_2',
-    alias: 'BBVA Debito',
-    bank: 'BBVA',
-    cardType: 'debit',
-    last4: '8844',
-    color: '#2563EB',
-    icon: 'wallet-outline',
-  },
-];
-
-const seedAccounts: FinanceAccount[] = [
-  {
-    id: 'acc_bancolombia',
-    name: 'Bancolombia Ahorros',
-    provider: 'Bancolombia',
-    kind: 'bank',
-    balance: 1200000,
-    currency: 'COP',
-    color: '#F59E0B',
-  },
-  {
-    id: 'acc_nequi',
-    name: 'Nequi Principal',
-    provider: 'Nequi',
-    kind: 'wallet',
-    balance: 350000,
-    currency: 'COP',
-    color: '#A855F7',
-  },
-  {
-    id: 'acc_broker',
-    name: 'Portafolio acciones',
-    provider: 'Trii',
-    kind: 'investment',
-    balance: 2100000,
-    currency: 'COP',
-    color: '#10B981',
-  },
-];
-
-const seedTransactions: Transaction[] = [
-  {
-    id: 'tx_1',
-    type: 'income',
-    amount: 2800,
-    currency: 'USD',
-    category: 'Salario',
-    tags: ['fijo'],
-    paymentMethod: 'transfer',
-    merchant: 'Empresa',
-    occurredAt: new Date().toISOString(),
-    recurring: true,
-    recurringRule: 'monthly',
-    source: 'manual',
-  },
-  {
-    id: 'tx_2',
-    type: 'expense',
-    amount: 74,
-    currency: 'USD',
-    category: 'Comida',
-    tags: ['delivery'],
-    paymentMethod: 'card',
-    cardId: 'card_1',
-    merchant: 'Uber Eats',
-    occurredAt: new Date(Date.now() - 86400000).toISOString(),
-    recurring: false,
-    source: 'sms',
-  },
-  {
-    id: 'tx_3',
-    type: 'expense',
-    amount: 38,
-    currency: 'USD',
-    category: 'Entretenimiento',
-    tags: ['suscripciones'],
-    paymentMethod: 'card',
-    cardId: 'card_2',
-    merchant: 'Spotify',
-    occurredAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-    recurring: true,
-    recurringRule: 'monthly',
-    source: 'manual',
-  },
-];
-
-const seedBudgets: Budget[] = [
-  { id: 'budget_global', category: 'GLOBAL', limit: 1800, monthKey: currentMonth },
-  { id: 'budget_food', category: 'Comida', limit: 350, monthKey: currentMonth },
-  { id: 'budget_transport', category: 'Transporte', limit: 200, monthKey: currentMonth },
-];
 
 const defaultTransactionCategories = [
   'Comida',
@@ -170,11 +77,6 @@ const defaultCategoryIcons: Record<string, string> = {
   Salario: 'cash-outline',
   Otros: 'apps-outline',
 };
-
-const seedGoals: SavingsGoal[] = [
-  { id: 'goal_1', title: 'Fondo de emergencia', targetAmount: 3000, currentAmount: 900 },
-  { id: 'goal_2', title: 'Vacaciones', targetAmount: 1400, currentAmount: 460, autoContribution: 75 },
-];
 
 const initialSettings: AppSettings = {
   currency: 'COP',
@@ -230,13 +132,13 @@ export const useFinanceStore = create<FinanceState>()(
   persist(
     (set, get) => ({
       onboardingDone: false,
-      transactions: seedTransactions,
+      transactions: [],
       transactionCategories: defaultTransactionCategories,
       categoryIcons: defaultCategoryIcons,
-      accounts: seedAccounts,
-      budgets: seedBudgets,
-      goals: seedGoals,
-      cards: seedCards,
+      accounts: [],
+      budgets: [],
+      goals: [],
+      cards: [],
       smsDetections: [],
       settings: initialSettings,
       finishOnboarding: () => set({ onboardingDone: true }),
@@ -337,12 +239,29 @@ export const useFinanceStore = create<FinanceState>()(
             };
           });
 
-          const unique = detections.filter(
-            (item, index) => detections.findIndex((other) => other.id === item.id) === index,
-          );
+          return {
+            smsDetections: mergeDetections(detections, state.smsDetections),
+          };
+        }),
+      processNotificationBatch: (notifications) =>
+        set((state) => {
+          const detections = notifications.map((input) => {
+            const parsed = parseWalletNotification(input);
+            const card = state.cards.find((item) => item.last4 === parsed.last4);
+            const candidate: SmsDetection = {
+              ...parsed,
+              cardId: card?.id,
+              status: 'pending',
+              duplicate: false,
+            };
+            return {
+              ...candidate,
+              duplicate: isLikelyDuplicate(candidate, state.transactions, state.smsDetections),
+            };
+          });
 
           return {
-            smsDetections: [...unique, ...state.smsDetections].slice(0, 50),
+            smsDetections: mergeDetections(detections, state.smsDetections),
           };
         }),
       acceptSms: (detectionId) =>
@@ -350,19 +269,20 @@ export const useFinanceStore = create<FinanceState>()(
           const detection = state.smsDetections.find((item) => item.id === detectionId);
           if (!detection || detection.duplicate || !detection.amount) return state;
 
+          const fromNotification = detection.channel === 'notification';
           const transaction: Transaction = {
             id: createId('tx'),
             type: 'expense',
             amount: detection.amount,
             currency: state.settings.currency,
             category: detection.categoryGuess ?? 'Otros',
-            tags: ['sms'],
+            tags: fromNotification ? ['wallet', 'notification'] : ['sms'],
             paymentMethod: detection.cardId ? 'card' : 'transfer',
             cardId: detection.cardId,
             merchant: detection.merchant ?? 'Comercio detectado',
             occurredAt: detection.occurredAt ?? new Date().toISOString(),
             recurring: false,
-            source: 'sms',
+            source: fromNotification ? 'notification' : 'sms',
           };
 
           return {
@@ -382,7 +302,8 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({ settings: { ...state.settings, ...settings } })),
     }),
     {
-      name: 'expenseapp-storage-v1',
+      // v2: arranque sin datos demo (v1 traía semillas USD/cuentas/tarjetas).
+      name: 'expenseapp-storage-v2',
       storage: createJSONStorage(() => AsyncStorage),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<FinanceState>;
@@ -416,10 +337,7 @@ export const useFinanceStore = create<FinanceState>()(
             ...defaultCategoryIcons,
             ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
           },
-          accounts:
-            Array.isArray(persisted.accounts) && persisted.accounts.length > 0
-              ? persisted.accounts
-              : currentState.accounts,
+          accounts: Array.isArray(persisted.accounts) ? persisted.accounts : currentState.accounts,
           settings: safeSettings,
         };
       },

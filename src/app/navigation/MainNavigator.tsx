@@ -102,7 +102,7 @@ function Tabs() {
         <Tab.Screen
           name="Sms"
           component={SmsInboxScreen}
-          options={{ title: "SMS" }}
+          options={{ title: "Inbox" }}
         />
         <Tab.Screen
           name="Settings"
