@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatAmountInput, parseAmountInput } from '../../core/utils/format';
+import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 const palette = ['#2563EB', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B'];
@@ -14,12 +14,15 @@ export function CardsScreen() {
   const insets = useSafeAreaInsets();
   const currency = useFinanceStore((state) => state.settings.currency);
   const cards = useFinanceStore((state) => state.cards);
+  const accounts = useFinanceStore((state) => state.accounts);
   const upsertCard = useFinanceStore((state) => state.upsertCard);
+  const deleteCard = useFinanceStore((state) => state.deleteCard);
   const [alias, setAlias] = useState('');
   const [bank, setBank] = useState('');
   const [cardType, setCardType] = useState<'credit' | 'debit'>('credit');
   const [last4, setLast4] = useState('');
   const [limitRaw, setLimitRaw] = useState('');
+  const [accountId, setAccountId] = useState<string | undefined>(undefined);
   const [statementDay, setStatementDay] = useState<number>(15);
   const [dueDay, setDueDay] = useState<number>(30);
 
@@ -39,6 +42,7 @@ export function CardsScreen() {
       last4: normalizedLast4,
       color: palette[Math.floor(Math.random() * palette.length)],
       icon: cardType === 'credit' ? 'card-outline' : 'wallet-outline',
+      accountId,
       limit: limit > 0 ? limit : undefined,
       statementDay: statement >= 1 && statement <= 31 ? statement : undefined,
       dueDay: due >= 1 && due <= 31 ? due : undefined,
@@ -47,6 +51,7 @@ export function CardsScreen() {
     setBank('');
     setLast4('');
     setLimitRaw('');
+    setAccountId(undefined);
     setStatementDay(15);
     setDueDay(30);
   };
@@ -107,6 +112,26 @@ export function CardsScreen() {
             keyboardType="decimal-pad"
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
+          {accounts.length > 0 ? (
+            <>
+              <Text style={[styles.pickerTitle, { color: theme.text }]}>Cuenta asociada (para descontar gastos SMS/Wallet)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
+                {accounts.map((acc) => (
+                  <Pressable
+                    key={acc.id}
+                    onPress={() => setAccountId(accountId === acc.id ? undefined : acc.id)}
+                    style={[
+                      styles.dayChip,
+                      { borderColor: theme.border, paddingHorizontal: 12 },
+                      accountId === acc.id && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
+                    ]}
+                  >
+                    <Text style={[styles.dayText, { color: theme.text }]}>{acc.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
           <Text style={[styles.pickerTitle, { color: theme.text }]}>Día de corte</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
             {days.map((day) => (
@@ -144,23 +169,38 @@ export function CardsScreen() {
           </Pressable>
         </PremiumCard>
 
-        {cards.map((card) => (
-          <PremiumCard key={card.id} style={{ backgroundColor: `${card.color}18` }}>
-            <View style={styles.header}>
-              <Text style={[styles.alias, { color: theme.text }]}>{card.alias}</Text>
-              <Text style={[styles.type, { color: theme.textMuted }]}>{card.cardType.toUpperCase()}</Text>
-            </View>
-            <Text style={[styles.bank, { color: theme.textMuted }]}>{card.bank}</Text>
-            <Text style={[styles.last4, { color: theme.text }]}>**** **** **** {card.last4}</Text>
-            <View style={styles.meta}>
-              {card.limit ? <Text style={[styles.metaText, { color: theme.textMuted }]}>Cupo: {card.limit}</Text> : null}
-              {card.statementDay ? (
-                <Text style={[styles.metaText, { color: theme.textMuted }]}>Corte: día {card.statementDay}</Text>
-              ) : null}
-              {card.dueDay ? <Text style={[styles.metaText, { color: theme.textMuted }]}>Pago: día {card.dueDay}</Text> : null}
-            </View>
-          </PremiumCard>
-        ))}
+        {cards.map((card) => {
+          const linkedAccount = card.accountId ? accounts.find((acc) => acc.id === card.accountId) : undefined;
+          return (
+            <PremiumCard key={card.id} style={{ backgroundColor: `${card.color}18` }}>
+              <View style={styles.header}>
+                <Text style={[styles.alias, { color: theme.text }]}>{card.alias}</Text>
+                <Text style={[styles.type, { color: theme.textMuted }]}>{card.cardType === 'credit' ? 'CRÉDITO' : 'DÉBITO'}</Text>
+              </View>
+              <Text style={[styles.bank, { color: theme.textMuted }]}>
+                {card.bank}
+                {linkedAccount ? ` • Cuenta: ${linkedAccount.name}` : ''}
+              </Text>
+              <Text style={[styles.last4, { color: theme.text }]}>**** **** **** {card.last4}</Text>
+              <View style={styles.meta}>
+                {card.limit ? (
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>
+                    Cupo: {formatMoney(card.limit, currency)}
+                  </Text>
+                ) : null}
+                {card.statementDay ? (
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>Corte: día {card.statementDay}</Text>
+                ) : null}
+                {card.dueDay ? (
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>Pago: día {card.dueDay}</Text>
+                ) : null}
+              </View>
+              <Pressable onPress={() => deleteCard(card.id)} style={{ marginTop: 10 }}>
+                <Text style={[styles.metaText, { color: theme.warning, fontWeight: '600' }]}>Eliminar tarjeta</Text>
+              </Pressable>
+            </PremiumCard>
+          );
+        })}
       </ScrollView>
     </Screen>
   );

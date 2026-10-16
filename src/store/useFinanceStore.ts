@@ -6,7 +6,9 @@ import {
   NotificationRawInput,
   parseWalletNotification,
 } from '../domain/notificationParser';
+import { clampAccountBalance, isLiabilityKind } from '../domain/accounts';
 import {
+  AccountKind,
   AppSettings,
   Budget,
   FinanceAccount,
@@ -16,11 +18,81 @@ import {
   Transaction,
 } from '../domain/models';
 
+const KNOWN_ACCOUNT_KINDS = new Set<AccountKind>([
+  'default',
+  'cash',
+  'debit_card',
+  'credit_card',
+  'virtual',
+  'investment',
+  'receivable',
+  'payable',
+  'bank',
+  'wallet',
+  'broker',
+]);
+
+const sanitizeAccount = (raw: unknown): FinanceAccount | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Partial<FinanceAccount>;
+  if (typeof item.id !== 'string' || typeof item.name !== 'string') return null;
+  const kind =
+    typeof item.kind === 'string' && KNOWN_ACCOUNT_KINDS.has(item.kind as AccountKind)
+      ? (item.kind as AccountKind)
+      : 'default';
+  return {
+    id: item.id,
+    name: item.name,
+    provider: typeof item.provider === 'string' ? item.provider : '',
+    kind,
+    balance: typeof item.balance === 'number' && Number.isFinite(item.balance) ? item.balance : 0,
+    currency: typeof item.currency === 'string' && item.currency ? item.currency : 'COP',
+    color: typeof item.color === 'string' && item.color ? item.color : '#2563EB',
+    icon: typeof item.icon === 'string' ? item.icon : undefined,
+    note: typeof item.note === 'string' ? item.note : undefined,
+    excludeFromTotal: typeof item.excludeFromTotal === 'boolean' ? item.excludeFromTotal : undefined,
+    symbol: typeof item.symbol === 'string' ? item.symbol : undefined,
+    quantity: typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? item.quantity : undefined,
+    lastPrice: typeof item.lastPrice === 'number' && Number.isFinite(item.lastPrice) ? item.lastPrice : undefined,
+    priceCurrency: typeof item.priceCurrency === 'string' ? item.priceCurrency : undefined,
+    priceUpdatedAt: typeof item.priceUpdatedAt === 'string' ? item.priceUpdatedAt : undefined,
+  };
+};
+
+const hasMatchingTransaction = (detection: SmsDetection, transactions: Transaction[]): boolean =>
+  transactions.some((tx) => {
+    if (tx.detectionId && tx.detectionId === detection.id) return true;
+    if (!detection.amount || !detection.occurredAt) return false;
+    const sameAmount = Math.abs(tx.amount - detection.amount) < 0.01;
+    const sameDay =
+      new Date(tx.occurredAt).toDateString() === new Date(detection.occurredAt).toDateString();
+    const sameMerchant =
+      detection.merchant && tx.merchant.toLowerCase().includes(detection.merchant.toLowerCase());
+    return sameAmount && sameDay && Boolean(sameMerchant);
+  });
+
 const mergeDetections = (
   incoming: SmsDetection[],
   existing: SmsDetection[],
+  transactions: Transaction[],
 ): SmsDetection[] => {
-  const merged = [...incoming, ...existing];
+  const existingMap = new Map(existing.map((item) => [item.id, item]));
+  const processedIncoming = incoming.map((item) => {
+    const prev = existingMap.get(item.id);
+    if (!prev) return item;
+    // Si ya fue aceptado y su transacción sigue activa, conservar estado aceptado para no duplicar en auto-sync.
+    // Si la transacción fue eliminada, permitir que vuelva a 'pending' y sin bloqueo de duplicado.
+    if (prev.status === 'accepted' && hasMatchingTransaction(prev, transactions)) {
+      return prev;
+    }
+    return {
+      ...item,
+      status: 'pending' as const,
+      duplicate: hasMatchingTransaction(item, transactions),
+    };
+  });
+
+  const merged = [...processedIncoming, ...existing];
   const unique = merged.filter(
     (item, index) => merged.findIndex((other) => other.id === item.id) === index,
   );
@@ -47,16 +119,23 @@ interface FinanceState {
   removeTransactionCategory: (category: string, kind?: CategoryKind) => void;
   setCategoryIcon: (category: string, icon: string) => void;
   upsertAccount: (account: FinanceAccount) => void;
+  deleteAccount: (id: string) => void;
   updateTransaction: (id: string, payload: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   setBudget: (budget: Budget) => void;
   deleteBudget: (id: string) => void;
   upsertGoal: (goal: SavingsGoal) => void;
+  deleteGoal: (id: string) => void;
   addGoalContribution: (goalId: string, amount: number) => void;
   upsertCard: (card: PaymentCard) => void;
+  deleteCard: (id: string) => void;
   processSmsBatch: (messages: SmsRawInput[]) => void;
   processNotificationBatch: (notifications: NotificationRawInput[]) => void;
-  acceptSms: (detectionId: string) => void;
+  updateSmsDetection: (
+    detectionId: string,
+    payload: Partial<Pick<SmsDetection, 'amount' | 'merchant' | 'categoryGuess'>>,
+  ) => void;
+  acceptSms: (detectionId: string, accountId?: string) => void;
   discardSms: (detectionId: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
 }
@@ -123,10 +202,24 @@ const applyAccountMovement = (
     const factor = mode === 'apply' ? 1 : -1;
     return accounts.map((account) => {
       if (account.id === transaction.accountId) {
-        return { ...account, balance: Math.max(account.balance - transaction.amount * factor, 0) };
+        // Salida de pasivo = más deuda (avance); salida de activo = menos saldo.
+        const delta = isLiabilityKind(account.kind)
+          ? transaction.amount * factor
+          : -transaction.amount * factor;
+        return {
+          ...account,
+          balance: clampAccountBalance(account, account.balance + delta),
+        };
       }
       if (account.id === transaction.destinationAccountId) {
-        return { ...account, balance: Math.max(account.balance + transaction.amount * factor, 0) };
+        // Entrada a pasivo = pago (menos deuda); entrada a activo = más saldo.
+        const delta = isLiabilityKind(account.kind)
+          ? -transaction.amount * factor
+          : transaction.amount * factor;
+        return {
+          ...account,
+          balance: clampAccountBalance(account, account.balance + delta),
+        };
       }
       return account;
     });
@@ -135,11 +228,15 @@ const applyAccountMovement = (
   if (!transaction.accountId) return accounts;
   return accounts.map((account) => {
     if (account.id !== transaction.accountId) return account;
-    const direction = transaction.type === 'expense' ? -1 : 1;
+    // En pasivos (TC), un gasto aumenta la deuda; un ingreso/pago la reduce.
+    let direction = transaction.type === 'expense' ? -1 : 1;
+    if (isLiabilityKind(account.kind)) {
+      direction = transaction.type === 'expense' ? 1 : -1;
+    }
     const signedAmount = direction * transaction.amount * (mode === 'apply' ? 1 : -1);
     return {
       ...account,
-      balance: Math.max(account.balance + signedAmount, 0),
+      balance: clampAccountBalance(account, account.balance + signedAmount),
     };
   });
 };
@@ -216,17 +313,55 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           accounts: [...state.accounts.filter((item) => item.id !== account.id), account],
         })),
-      updateTransaction: (id, payload) =>
+      deleteAccount: (id) =>
         set((state) => ({
-          transactions: state.transactions.map((tx) => (tx.id === id ? { ...tx, ...payload } : tx)),
+          accounts: state.accounts.filter((item) => item.id !== id),
         })),
+      updateTransaction: (id, payload) =>
+        set((state) => {
+          const existing = state.transactions.find((tx) => tx.id === id);
+          if (!existing) return state;
+          const updated: Transaction = { ...existing, ...payload };
+          const revertedAccounts = applyAccountMovement(state.accounts, existing, 'revert');
+          const nextAccounts = applyAccountMovement(revertedAccounts, updated, 'apply');
+          return {
+            transactions: state.transactions.map((tx) => (tx.id === id ? updated : tx)),
+            accounts: nextAccounts,
+          };
+        }),
       deleteTransaction: (id) =>
         set((state) => {
           const target = state.transactions.find((tx) => tx.id === id);
           if (!target) return state;
+          const remainingTransactions = state.transactions.filter((tx) => tx.id !== id);
+          const nextDetections = state.smsDetections.map((det) => {
+            const matchesDeleted =
+              (target.detectionId && det.id === target.detectionId) ||
+              (target.source !== 'manual' &&
+                det.status === 'accepted' &&
+                det.amount !== undefined &&
+                Math.abs(det.amount - target.amount) < 0.01 &&
+                det.merchant === target.merchant);
+
+            if (matchesDeleted) {
+              const reopened: SmsDetection = { ...det, status: 'pending', duplicate: false };
+              return {
+                ...reopened,
+                duplicate: hasMatchingTransaction(reopened, remainingTransactions),
+              };
+            }
+            if (det.status === 'pending') {
+              return {
+                ...det,
+                duplicate: hasMatchingTransaction(det, remainingTransactions),
+              };
+            }
+            return det;
+          });
           return {
-            transactions: state.transactions.filter((tx) => tx.id !== id),
+            transactions: remainingTransactions,
             accounts: applyAccountMovement(state.accounts, target, 'revert'),
+            smsDetections: nextDetections,
           };
         }),
       setBudget: (budget) =>
@@ -241,6 +376,10 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           goals: [...state.goals.filter((item) => item.id !== goal.id), goal],
         })),
+      deleteGoal: (id) =>
+        set((state) => ({
+          goals: state.goals.filter((item) => item.id !== id),
+        })),
       addGoalContribution: (goalId, amount) =>
         set((state) => ({
           goals: state.goals.map((goal) =>
@@ -252,6 +391,10 @@ export const useFinanceStore = create<FinanceState>()(
       upsertCard: (card) =>
         set((state) => ({
           cards: [...state.cards.filter((item) => item.id !== card.id), card],
+        })),
+      deleteCard: (id) =>
+        set((state) => ({
+          cards: state.cards.filter((item) => item.id !== id),
         })),
       processSmsBatch: (messages) =>
         set((state) => {
@@ -271,7 +414,7 @@ export const useFinanceStore = create<FinanceState>()(
           });
 
           return {
-            smsDetections: mergeDetections(detections, state.smsDetections),
+            smsDetections: mergeDetections(detections, state.smsDetections, state.transactions),
           };
         }),
       processNotificationBatch: (notifications) =>
@@ -292,13 +435,30 @@ export const useFinanceStore = create<FinanceState>()(
           });
 
           return {
-            smsDetections: mergeDetections(detections, state.smsDetections),
+            smsDetections: mergeDetections(detections, state.smsDetections, state.transactions),
           };
         }),
-      acceptSms: (detectionId) =>
+      updateSmsDetection: (detectionId, payload) =>
+        set((state) => ({
+          smsDetections: state.smsDetections.map((item) => {
+            if (item.id !== detectionId) return item;
+            const updated: SmsDetection = { ...item, ...payload };
+            return {
+              ...updated,
+              duplicate: hasMatchingTransaction(updated, state.transactions),
+            };
+          }),
+        })),
+      acceptSms: (detectionId, explicitAccountId) =>
         set((state) => {
           const detection = state.smsDetections.find((item) => item.id === detectionId);
-          if (!detection || detection.duplicate || !detection.amount) return state;
+          if (!detection || !detection.amount || detection.amount <= 0) return state;
+
+          const linkedCard = detection.cardId
+            ? state.cards.find((card) => card.id === detection.cardId)
+            : undefined;
+          const resolvedAccountId =
+            explicitAccountId ?? linkedCard?.accountId ?? state.accounts[0]?.id;
 
           const fromNotification = detection.channel === 'notification';
           const transaction: Transaction = {
@@ -310,16 +470,19 @@ export const useFinanceStore = create<FinanceState>()(
             tags: fromNotification ? ['wallet', 'notification'] : ['sms'],
             paymentMethod: detection.cardId ? 'card' : 'transfer',
             cardId: detection.cardId,
+            accountId: resolvedAccountId,
             merchant: detection.merchant ?? 'Comercio detectado',
             occurredAt: detection.occurredAt ?? new Date().toISOString(),
             recurring: false,
             source: fromNotification ? 'notification' : 'sms',
+            detectionId: detection.id,
           };
 
           return {
             transactions: [transaction, ...state.transactions],
+            accounts: applyAccountMovement(state.accounts, transaction, 'apply'),
             smsDetections: state.smsDetections.map((item) =>
-              item.id === detectionId ? { ...item, status: 'accepted' } : item,
+              item.id === detectionId ? { ...item, status: 'accepted', duplicate: false } : item,
             ),
           };
         }),
@@ -376,7 +539,9 @@ export const useFinanceStore = create<FinanceState>()(
             ...defaultCategoryIcons,
             ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
           },
-          accounts: Array.isArray(persisted.accounts) ? persisted.accounts : currentState.accounts,
+          accounts: Array.isArray(persisted.accounts)
+            ? persisted.accounts.map(sanitizeAccount).filter((item): item is FinanceAccount => item != null)
+            : currentState.accounts,
           settings: safeSettings,
         };
       },

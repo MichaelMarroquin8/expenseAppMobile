@@ -15,14 +15,28 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  convertToBase,
+  getExchangeRates,
+  getUnitsOfBasePerOne,
+} from '../../backend/exchangeRates';
+import { findCurrency } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatAmountInput, getCurrencyFractionDigits, parseAmountInput } from '../../core/utils/format';
+import {
+  formatAmountInput,
+  formatMoney,
+  getCurrencyFractionDigits,
+  parseAmountInput,
+} from '../../core/utils/format';
+import { Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
+import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
 
 interface QuickAddTransactionModalProps {
   open: boolean;
   onClose: () => void;
   initialType?: 'income' | 'expense';
+  editingTransaction?: Transaction | null;
 }
 
 const formatDateLabel = (date: Date) =>
@@ -86,16 +100,18 @@ export function QuickAddTransactionModal({
   open,
   onClose,
   initialType = 'expense',
+  editingTransaction = null,
 }: QuickAddTransactionModalProps) {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const currency = useFinanceStore((state) => state.settings.currency);
+  const defaultCurrency = useFinanceStore((state) => state.settings.currency);
   const expenseCategories = useFinanceStore((state) => state.transactionCategories);
   const incomeCategories = useFinanceStore((state) => state.incomeCategories);
   const categoryIcons = useFinanceStore((state) => state.categoryIcons);
   const accounts = useFinanceStore((state) => state.accounts);
   const addTransactionCategory = useFinanceStore((state) => state.addTransactionCategory);
   const addTransaction = useFinanceStore((state) => state.addTransaction);
+  const updateTransaction = useFinanceStore((state) => state.updateTransaction);
   const amountInputRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState<'category' | 'amount'>('category');
@@ -111,10 +127,37 @@ export function QuickAddTransactionModal({
   const [occurredAtInput, setOccurredAtInput] = useState(toLocalDateInput(new Date()));
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [entryCurrency, setEntryCurrency] = useState(defaultCurrency);
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
   const keypadAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!open) return;
+    if (editingTransaction) {
+      const txDate = new Date(editingTransaction.occurredAt);
+      const validDate = Number.isNaN(txDate.getTime()) ? new Date() : txDate;
+      const entry = editingTransaction.originalCurrency ?? editingTransaction.currency;
+      const entryAmount = editingTransaction.originalAmount ?? editingTransaction.amount;
+      setType(editingTransaction.type);
+      setEntryCurrency(entry);
+      setAmountRaw(parseAmountInput(String(entryAmount), entry));
+      setMerchant(editingTransaction.merchant);
+      setNewCategory('');
+      setCategory(editingTransaction.category);
+      setAccountId(editingTransaction.accountId ?? accounts[0]?.id);
+      setDestinationAccountId(
+        editingTransaction.destinationAccountId ?? accounts[1]?.id ?? accounts[0]?.id,
+      );
+      setOccurredAtInput(toLocalDateInput(validDate));
+      setCalendarMonth(new Date(validDate.getFullYear(), validDate.getMonth(), 1));
+      setShowCalendar(false);
+      setCurrencyPickerOpen(false);
+      setStep('amount');
+      setCategoryPicked(true);
+      return;
+    }
+
     const startType: 'income' | 'expense' = initialType;
     setType(startType);
     setAmountRaw('');
@@ -126,9 +169,29 @@ export function QuickAddTransactionModal({
     setOccurredAtInput(toLocalDateInput(new Date()));
     setCalendarMonth(new Date());
     setShowCalendar(false);
+    setEntryCurrency(defaultCurrency);
+    setCurrencyPickerOpen(false);
     setStep('category');
     setCategoryPicked(false);
-  }, [open, initialType, accounts]);
+  }, [open, initialType, accounts, editingTransaction, defaultCurrency]);
+
+  useEffect(() => {
+    if (!open || entryCurrency === defaultCurrency) {
+      setRates(null);
+      return;
+    }
+    let cancelled = false;
+    getExchangeRates(defaultCurrency)
+      .then((result) => {
+        if (!cancelled) setRates(result);
+      })
+      .catch(() => {
+        if (!cancelled) setRates(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, entryCurrency, defaultCurrency]);
 
   useEffect(() => {
     if (!open || step !== 'amount') return;
@@ -165,29 +228,79 @@ export function QuickAddTransactionModal({
     onClose();
   };
 
+  const resolvePersistedAmount = (entryAmount: number) => {
+    if (entryCurrency === defaultCurrency) {
+      return {
+        amount: entryAmount,
+        currency: defaultCurrency,
+        originalAmount: undefined as number | undefined,
+        originalCurrency: undefined as string | undefined,
+        exchangeRate: undefined as number | undefined,
+      };
+    }
+    if (!rates) return null;
+    const exchangeRate = getUnitsOfBasePerOne(rates, defaultCurrency, entryCurrency);
+    const converted = convertToBase(entryAmount, entryCurrency, defaultCurrency, rates);
+    if (exchangeRate == null || converted == null) return null;
+    const digits = getCurrencyFractionDigits(defaultCurrency);
+    const rounded =
+      digits === 0 ? Math.round(converted) : Math.round(converted * 10 ** digits) / 10 ** digits;
+    return {
+      amount: rounded,
+      currency: defaultCurrency,
+      originalAmount: entryAmount,
+      originalCurrency: entryCurrency,
+      exchangeRate,
+    };
+  };
+
   const submit = () => {
-    const amount = Number(amountRaw);
+    const entryAmount = Number(amountRaw);
     const normalizedMerchant =
       merchant.trim() || (type === 'transfer' ? 'Transferencia' : type === 'income' ? 'Ingreso' : category);
-    if (Number.isNaN(amount) || amount <= 0) return;
+    if (Number.isNaN(entryAmount) || entryAmount <= 0) return;
     if (type === 'transfer' && (!accountId || !destinationAccountId || accountId === destinationAccountId)) return;
-    if (type !== 'transfer' && !accountId) return;
+    if (type !== 'transfer' && accounts.length > 0 && !accountId) return;
+    const persisted = resolvePersistedAmount(entryAmount);
+    if (!persisted) return;
     const selectedDate = parseLocalDateInput(occurredAtInput) ?? new Date();
-    const now = new Date();
+    const baseTime = editingTransaction ? new Date(editingTransaction.occurredAt) : new Date();
+    const safeTime = Number.isNaN(baseTime.getTime()) ? new Date() : baseTime;
     const occurredAt = new Date(
       selectedDate.getFullYear(),
       selectedDate.getMonth(),
       selectedDate.getDate(),
-      now.getHours(),
-      now.getMinutes(),
-      now.getSeconds(),
+      safeTime.getHours(),
+      safeTime.getMinutes(),
+      safeTime.getSeconds(),
       0,
     ).toISOString();
 
+    if (editingTransaction) {
+      updateTransaction(editingTransaction.id, {
+        type,
+        amount: persisted.amount,
+        currency: persisted.currency,
+        originalAmount: persisted.originalAmount,
+        originalCurrency: persisted.originalCurrency,
+        exchangeRate: persisted.exchangeRate,
+        category: type === 'transfer' ? 'Transferencia' : category,
+        merchant: normalizedMerchant,
+        accountId,
+        destinationAccountId: type === 'transfer' ? destinationAccountId : undefined,
+        occurredAt,
+      });
+      close();
+      return;
+    }
+
     addTransaction({
       type,
-      amount,
-      currency,
+      amount: persisted.amount,
+      currency: persisted.currency,
+      originalAmount: persisted.originalAmount,
+      originalCurrency: persisted.originalCurrency,
+      exchangeRate: persisted.exchangeRate,
       category: type === 'transfer' ? 'Transferencia' : category,
       tags: [],
       paymentMethod: 'transfer',
@@ -239,7 +352,7 @@ export function QuickAddTransactionModal({
     'ellipse-outline';
 
   const onHeaderLeft = () => {
-    if (step === 'amount' && type !== 'transfer') {
+    if (step === 'amount' && type !== 'transfer' && !editingTransaction) {
       Keyboard.dismiss();
       setStep('category');
       return;
@@ -247,7 +360,13 @@ export function QuickAddTransactionModal({
     close();
   };
 
-  const fractionDigits = getCurrencyFractionDigits(currency);
+  const fractionDigits = getCurrencyFractionDigits(entryCurrency);
+  const entryAmountValue = Number(amountRaw);
+  const convertedPreview =
+    entryCurrency !== defaultCurrency && rates && !Number.isNaN(entryAmountValue) && entryAmountValue > 0
+      ? convertToBase(entryAmountValue, entryCurrency, defaultCurrency, rates)
+      : null;
+  const entryCurrencyMeta = findCurrency(entryCurrency);
   const keypadExpandedHeight = 280 + Math.max(insets.bottom, 8);
   const keypad = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', '.'];
   const appendKey = (key: string) => {
@@ -256,7 +375,7 @@ export function QuickAddTransactionModal({
       if (key === '.' && prev.includes('.')) return prev;
       if ((key === '0' || key === '00') && (!prev || prev === '0')) return prev === '0' ? prev : '0';
       const next = `${prev}${key}`;
-      return parseAmountInput(next, currency);
+      return parseAmountInput(next, entryCurrency);
     });
   };
 
@@ -314,16 +433,28 @@ export function QuickAddTransactionModal({
           ]}
         >
           <View style={styles.header}>
-            <Pressable onPress={onHeaderLeft} style={styles.headerSide}>
+            <Pressable android_ripple={null} onPress={onHeaderLeft} style={styles.headerSide}>
               <Text style={[styles.headerAction, { color: theme.textMuted }]}>
-                {step === 'amount' && type !== 'transfer' ? 'Atrás' : 'Cancelar'}
+                {step === 'amount' && type !== 'transfer' && !editingTransaction ? 'Atrás' : 'Cancelar'}
               </Text>
             </Pressable>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Agregar</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {editingTransaction ? 'Editar' : 'Agregar'}
+            </Text>
             {step === 'amount' ? (
-              <Pressable onPress={submit} style={[styles.headerSide, styles.headerSideRight]}>
-                <Text style={[styles.headerAction, { color: theme.primary }]}>Guardar</Text>
-              </Pressable>
+              <View style={[styles.headerSide, styles.headerSideRight, styles.headerActions]}>
+                <Pressable
+                  android_ripple={null}
+                  onPress={() => setCurrencyPickerOpen(true)}
+                  hitSlop={8}
+                  style={[styles.fxButton, { borderColor: theme.border, backgroundColor: `${theme.primary}18` }]}
+                >
+                  <Ionicons name="swap-horizontal" size={18} color={theme.primary} />
+                </Pressable>
+                <Pressable android_ripple={null} onPress={submit}>
+                  <Text style={[styles.headerAction, { color: theme.primary }]}>Guardar</Text>
+                </Pressable>
+              </View>
             ) : (
               <View style={styles.headerSide} />
             )}
@@ -411,16 +542,47 @@ export function QuickAddTransactionModal({
                 </Pressable>
               ) : null}
 
-              <TextInput
-                ref={amountInputRef}
-                value={formatAmountInput(amountRaw, currency)}
-                onChangeText={() => {}}
-                onFocus={() => Keyboard.dismiss()}
-                placeholder="Monto"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.amountInput, { color: theme.text, borderColor: theme.border }]}
-                showSoftInputOnFocus={false}
-              />
+              <View style={styles.amountBlock}>
+                {convertedPreview != null ? (
+                  <View style={[styles.conversionChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Text style={[styles.conversionText, { color: theme.textMuted }]}>
+                      {formatMoney(convertedPreview, defaultCurrency)}
+                    </Text>
+                  </View>
+                ) : entryCurrency !== defaultCurrency && !rates ? (
+                  <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
+                    Cargando conversión…
+                  </Text>
+                ) : null}
+                <View style={[styles.amountRow, { borderColor: theme.border }]}>
+                  <Pressable
+                    android_ripple={null}
+                    onPress={() => setCurrencyPickerOpen(true)}
+                    style={[styles.currencyBadge, { backgroundColor: `${theme.primary}22` }]}
+                  >
+                    <Text style={[styles.currencyBadgeText, { color: theme.primary }]}>
+                      {entryCurrency}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.amountInputHit} onPress={() => Keyboard.dismiss()}>
+                    <TextInput
+                      ref={amountInputRef}
+                      value={formatAmountInput(amountRaw, entryCurrency)}
+                      onChangeText={(val) => setAmountRaw(parseAmountInput(val, entryCurrency))}
+                      onFocus={() => Keyboard.dismiss()}
+                      placeholder="0"
+                      placeholderTextColor={theme.textMuted}
+                      style={[styles.amountInput, { color: theme.text }]}
+                      showSoftInputOnFocus={false}
+                    />
+                  </Pressable>
+                </View>
+                {entryCurrencyMeta && entryCurrency !== defaultCurrency ? (
+                  <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
+                    Se guardará convertido a {defaultCurrency}
+                  </Text>
+                ) : null}
+              </View>
               <TextInput
                 value={merchant}
                 onChangeText={setMerchant}
@@ -459,21 +621,29 @@ export function QuickAddTransactionModal({
               <Text style={[styles.blockTitle, { color: theme.text }]}>
                 {type === 'expense' ? 'Sale de' : type === 'income' ? 'Entra a' : 'Cuenta origen'}
               </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-                {accounts.map((account) => (
-                  <Pressable
-                    key={account.id}
-                    style={[
-                      styles.chip,
-                      { borderColor: theme.border },
-                      accountId === account.id && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
-                    ]}
-                    onPress={() => setAccountId(account.id)}
-                  >
-                    <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
+              {accounts.length === 0 ? (
+                <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
+                  {type === 'transfer'
+                    ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
+                    : 'Sin cuentas registradas (se guardará como movimiento general).'}
+                </Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                  {accounts.map((account) => (
+                    <Pressable
+                      key={account.id}
+                      style={[
+                        styles.chip,
+                        { borderColor: theme.border },
+                        accountId === account.id && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
+                      ]}
+                      onPress={() => setAccountId(account.id)}
+                    >
+                      <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
 
               {type === 'transfer' ? (
                 <>
@@ -547,6 +717,17 @@ export function QuickAddTransactionModal({
           </Animated.View>
           ) : null}
         </View>
+        <TransactionCurrencyPicker
+          open={currencyPickerOpen}
+          onClose={() => setCurrencyPickerOpen(false)}
+          defaultCurrency={defaultCurrency}
+          selectedCurrency={entryCurrency}
+          onSelect={(code) => {
+            setEntryCurrency(code);
+            setAmountRaw((prev) => parseAmountInput(prev, code));
+          }}
+        />
+
         <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
           <Pressable style={styles.calendarOverlay} onPress={() => setShowCalendar(false)}>
             <Pressable style={[styles.calendarCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -645,9 +826,60 @@ const styles = StyleSheet.create({
   headerSideRight: {
     alignItems: 'flex-end',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  fxButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerAction: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  amountBlock: {
+    marginBottom: 10,
+  },
+  conversionChip: {
+    alignSelf: 'flex-end',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  conversionText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  conversionHint: {
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    gap: 8,
+  },
+  currencyBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  currencyBadgeText: {
+    fontWeight: '800',
+    fontSize: 14,
   },
   modalCardCategory: {
     height: '86%',
@@ -712,12 +944,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
+  amountInputHit: {
+    flex: 1,
+  },
   amountInput: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
     paddingVertical: 12,
-    marginBottom: 10,
     fontSize: 34,
     fontWeight: '800',
     textAlign: 'right',

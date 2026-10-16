@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatAmountInput, formatMoney, monthKey, parseAmountInput } from '../../core/utils/format';
+import { formatAmountInput, formatMoney, monthKey, monthKeyFromIso, parseAmountInput } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function BudgetsScreen() {
@@ -19,7 +19,7 @@ export function BudgetsScreen() {
   const [selectedCategory, setSelectedCategory] = useState('GLOBAL');
   const [limitRaw, setLimitRaw] = useState('');
 
-  const monthExpenses = tx.filter((item) => item.type === 'expense' && item.occurredAt.startsWith(current));
+  const monthExpenses = tx.filter((item) => item.type === 'expense' && monthKeyFromIso(item.occurredAt) === current);
   const availableCategories = useMemo(
     () => ['GLOBAL', ...categories.filter((item) => item.toLowerCase() !== 'salario')],
     [categories],

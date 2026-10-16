@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DashboardScreen } from "../../features/dashboard/DashboardScreen";
 import { TransactionsScreen } from "../../features/transactions/TransactionsScreen";
+import { InsightsScreen } from "../../features/insights/InsightsScreen";
 import { BudgetsScreen } from "../../features/budgets/BudgetsScreen";
 import { SmsInboxScreen } from "../../features/sms/SmsInboxScreen";
 import { SettingsScreen } from "../../features/settings/SettingsScreen";
@@ -18,7 +19,9 @@ import { GoalsScreen } from "../../features/goals/GoalsScreen";
 import { ReportsScreen } from "../../features/reports/ReportsScreen";
 import { CardsScreen } from "../../features/cards/CardsScreen";
 import { AccountsScreen } from "../../features/accounts/AccountsScreen";
+import { AccountFormScreen } from "../../features/accounts/AccountFormScreen";
 import { CategoriesScreen } from "../../features/categories";
+import { CurrencySelectScreen } from "../../features/settings/CurrencySelectScreen";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { QuickAddTransactionModal } from "../../features/transactions/QuickAddTransactionModal";
 
@@ -28,13 +31,16 @@ type RootStackParamList = {
   Reports: undefined;
   Cards: undefined;
   Accounts: undefined;
+  AccountForm: { accountId?: string } | undefined;
   Categories: undefined;
+  Budgets: undefined;
+  CurrencySelect: undefined;
 };
 
 export type TabParamList = {
   Dashboard: undefined;
   Transactions: undefined;
-  Budgets: undefined;
+  Insights: undefined;
   Sms: undefined;
   Settings: undefined;
 };
@@ -59,8 +65,12 @@ function Tabs() {
             height: 64 + Math.max(insets.bottom - 6, 0),
             paddingBottom: Math.max(insets.bottom - 2, 8),
             paddingTop: 6,
-            marginBottom: 5,
-            borderRadius: 18,
+            marginBottom: 0,
+            bottom: 0,
+            borderTopLeftRadius: 18,
+            borderTopRightRadius: 18,
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
             position: "absolute",
           },
           tabBarIcon: ({ color, size }) => {
@@ -70,7 +80,7 @@ function Tabs() {
             > = {
               Dashboard: "grid-outline",
               Transactions: "swap-horizontal-outline",
-              Budgets: "pie-chart-outline",
+              Insights: "pie-chart-outline",
               Sms: "chatbubble-ellipses-outline",
               Settings: "settings-outline",
             };
@@ -95,9 +105,9 @@ function Tabs() {
           options={{ title: "Movs" }}
         />
         <Tab.Screen
-          name="Budgets"
-          component={BudgetsScreen}
-          options={{ title: "Presupuestos" }}
+          name="Insights"
+          component={InsightsScreen}
+          options={{ title: "Gráficos" }}
         />
         <Tab.Screen
           name="Sms"
@@ -182,9 +192,28 @@ export function MainNavigator() {
           options={{ title: "Cuentas" }}
         />
         <Stack.Screen
+          name="AccountForm"
+          component={AccountFormScreen}
+          options={({ route }) => ({
+            title: route.params && "accountId" in route.params && route.params.accountId
+              ? "Editar"
+              : "Nueva cuenta",
+          })}
+        />
+        <Stack.Screen
           name="Categories"
           component={CategoriesScreen}
           options={{ title: "Categorías" }}
+        />
+        <Stack.Screen
+          name="Budgets"
+          component={BudgetsScreen}
+          options={{ title: "Presupuestos" }}
+        />
+        <Stack.Screen
+          name="CurrencySelect"
+          component={CurrencySelectScreen}
+          options={{ headerShown: false, title: "Seleccionar" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

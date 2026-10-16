@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PremiumCard, Screen, SectionTitle } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
-import { formatMoney, formatShortDate } from "../../core/utils/format";
+import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from "../../core/utils/format";
 import { Transaction } from "../../domain/models";
 import { useFinanceStore } from "../../store/useFinanceStore";
 import { QuickAddTransactionModal } from "./QuickAddTransactionModal";
@@ -34,6 +34,7 @@ export function TransactionsScreen() {
 
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [movementFilter, setMovementFilter] = useState<MovementFilter>("all");
 
   const filtered = useMemo<Transaction[]>(() => {
@@ -51,9 +52,9 @@ export function TransactionsScreen() {
 
   const monthSummary = useMemo(() => {
     const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthlyTx = transactions.filter((tx) =>
-      tx.occurredAt.startsWith(currentMonthKey),
+    const currentMonthKey = monthKey(now);
+    const monthlyTx = transactions.filter(
+      (tx) => monthKeyFromIso(tx.occurredAt) === currentMonthKey,
     );
     const totalIncome = monthlyTx
       .filter((tx) => tx.type === "income")
@@ -147,37 +148,58 @@ export function TransactionsScreen() {
             </View>
           </View>
 
-          <View style={styles.segmentRow}>
-            {(
-              [
-                { id: "all", label: "Todos" },
-                { id: "expense", label: "Gastos" },
-                { id: "income", label: "Ingresos" },
-                { id: "transfer", label: "Transferencias" },
-              ] as const
-            ).map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => setMovementFilter(item.id)}
-                style={[
-                  styles.segmentChip,
-                  { borderColor: theme.border },
-                  movementFilter === item.id && {
-                    backgroundColor: theme.primary,
-                    borderColor: theme.primary,
-                  },
-                ]}
-              >
-                <Text
+          <View style={styles.segmentGroup}>
+            <View style={styles.segmentRow}>
+              {(
+                [
+                  { id: "all", label: "Todos" },
+                  { id: "expense", label: "Gastos" },
+                  { id: "income", label: "Ingresos" },
+                ] as const
+              ).map((item) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setMovementFilter(item.id)}
                   style={[
-                    styles.segmentText,
-                    { color: movementFilter === item.id ? "#fff" : theme.text },
+                    styles.segmentChip,
+                    { borderColor: theme.border },
+                    movementFilter === item.id && {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                    },
                   ]}
                 >
-                  {item.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      { color: movementFilter === item.id ? "#fff" : theme.text },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              onPress={() => setMovementFilter("transfer")}
+              style={[
+                styles.segmentChipFull,
+                { borderColor: theme.border },
+                movementFilter === "transfer" && {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  { color: movementFilter === "transfer" ? "#fff" : theme.text },
+                ]}
+              >
+                Transferencias
+              </Text>
+            </Pressable>
           </View>
 
           <TextInput
@@ -192,7 +214,10 @@ export function TransactionsScreen() {
           />
           <Pressable
             style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-            onPress={() => setModalOpen(true)}
+            onPress={() => {
+              setEditingTx(null);
+              setModalOpen(true);
+            }}
           >
             <Text style={styles.primaryButtonText}>Nueva transacción</Text>
           </Pressable>
@@ -216,41 +241,71 @@ export function TransactionsScreen() {
                 : undefined;
               return (
                 <View key={tx.id} style={styles.movementRow}>
-                  <View>
+                  <Pressable
+                    style={styles.movementInfo}
+                    onPress={() => {
+                      setEditingTx(tx);
+                      setModalOpen(true);
+                    }}
+                  >
                     <Text style={[styles.title, { color: theme.text }]}>
                       {tx.merchant}
                     </Text>
                     <Text style={[styles.subtitle, { color: theme.textMuted }]}>
                       {tx.category} • {formatShortDate(tx.occurredAt)} •{" "}
                       {sourceAccount?.name ?? tx.source}
+                      {tx.originalCurrency &&
+                      tx.originalAmount != null &&
+                      tx.originalCurrency !== tx.currency
+                        ? ` • ${formatMoney(tx.originalAmount, tx.originalCurrency)}`
+                        : ""}
                     </Text>
-                  </View>
+                  </Pressable>
                   <View style={styles.amountCol}>
-                    <Text
-                      style={[
-                        styles.value,
-                        {
-                          color:
-                            tx.type === "income"
-                              ? theme.success
-                              : tx.type === "expense"
-                                ? theme.danger
-                                : theme.primary,
-                        },
-                      ]}
+                    <Pressable
+                      onPress={() => {
+                        setEditingTx(tx);
+                        setModalOpen(true);
+                      }}
                     >
-                      {tx.type === "income"
-                        ? "+"
-                        : tx.type === "expense"
-                          ? "-"
-                          : ""}
-                      {formatMoney(tx.amount, currency)}
-                    </Text>
-                    <Pressable onPress={() => deleteTransaction(tx.id)}>
-                      <Text style={[styles.delete, { color: theme.warning }]}>
-                        Eliminar
+                      <Text
+                        style={[
+                          styles.value,
+                          {
+                            color:
+                              tx.type === "income"
+                                ? theme.success
+                                : tx.type === "expense"
+                                  ? theme.danger
+                                  : theme.primary,
+                          },
+                        ]}
+                      >
+                        {tx.type === "income"
+                          ? "+"
+                          : tx.type === "expense"
+                            ? "-"
+                            : ""}
+                        {formatMoney(tx.amount, currency)}
                       </Text>
                     </Pressable>
+                    <View style={styles.rowActions}>
+                      <Pressable
+                        onPress={() => {
+                          setEditingTx(tx);
+                          setModalOpen(true);
+                        }}
+                      >
+                        <Text style={[styles.editAction, { color: theme.primary }]}>
+                          Editar
+                        </Text>
+                      </Pressable>
+                      <Pressable onPress={() => deleteTransaction(tx.id)}>
+                        <Text style={[styles.delete, { color: theme.warning }]}>
+                          Eliminar
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               );
@@ -269,7 +324,11 @@ export function TransactionsScreen() {
 
       <QuickAddTransactionModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        editingTransaction={editingTx}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingTx(null);
+        }}
       />
     </Screen>
   );
@@ -290,9 +349,16 @@ const styles = StyleSheet.create({
   summaryItem: { flex: 1 },
   summaryCaption: { fontSize: 12 },
   summaryValue: { fontSize: 16, fontWeight: "700", marginTop: 2 },
-  segmentRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  segmentGroup: { gap: 8, marginBottom: 10 },
+  segmentRow: { flexDirection: "row", gap: 8 },
   segmentChip: {
     flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  segmentChipFull: {
     borderWidth: 1,
     borderRadius: 10,
     paddingVertical: 9,
@@ -340,9 +406,12 @@ const styles = StyleSheet.create({
     borderBottomColor: "#94a3b822",
   },
   title: { fontWeight: "700", fontSize: 16 },
+  movementInfo: { flex: 1, paddingRight: 8 },
   subtitle: { fontSize: 12, marginTop: 3, maxWidth: 220 },
   amountCol: { alignItems: "flex-end" },
   value: { fontWeight: "700" },
-  delete: { marginTop: 4, fontWeight: "600", fontSize: 12 },
+  rowActions: { flexDirection: "row", gap: 12, marginTop: 4 },
+  editAction: { fontWeight: "600", fontSize: 12 },
+  delete: { fontWeight: "600", fontSize: 12 },
   emptyText: { fontSize: 13 },
 });

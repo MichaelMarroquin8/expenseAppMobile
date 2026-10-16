@@ -1,10 +1,12 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
-import { formatMoney, formatShortDate, monthKey } from '../../core/utils/format';
+import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from '../../core/utils/format';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
+import { Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
+import { QuickAddTransactionModal } from '../transactions/QuickAddTransactionModal';
 
 const Stat = ({ label, value, color }: { label: string; value: string; color: string }) => {
   return (
@@ -20,13 +22,14 @@ export function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const summary = useMemo(() => {
     const now = new Date();
     const thisMonth = monthKey(now);
     const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonth = monthKey(previous);
-    const txThisMonth = transactions.filter((tx) => tx.occurredAt.startsWith(thisMonth));
-    const txLastMonth = transactions.filter((tx) => tx.occurredAt.startsWith(lastMonth));
+    const txThisMonth = transactions.filter((tx) => monthKeyFromIso(tx.occurredAt) === thisMonth);
+    const txLastMonth = transactions.filter((tx) => monthKeyFromIso(tx.occurredAt) === lastMonth);
     const income = txThisMonth.filter((tx) => tx.type === 'income').reduce((acc, tx) => acc + tx.amount, 0);
     const expenses = txThisMonth.filter((tx) => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0);
     const prevExpenses = txLastMonth
@@ -118,28 +121,37 @@ export function DashboardScreen() {
         </PremiumCard>
 
         <PremiumCard>
-          <SectionTitle title="Ultimos movimientos" />
+          <SectionTitle title="Últimos movimientos" subtitle="Toca un movimiento para editar su monto o detalle" />
           {summary.latest.map((tx) => (
-            <View key={tx.id} style={styles.movement}>
+            <Pressable key={tx.id} style={styles.movement} onPress={() => setEditingTx(tx)}>
               <View>
                 <Text style={[styles.merchant, { color: theme.text }]}>{tx.merchant}</Text>
                 <Text style={[styles.meta, { color: theme.textMuted }]}>
                   {tx.category} • {formatShortDate(tx.occurredAt)}
                 </Text>
               </View>
-              <Text
-                style={[
-                  styles.amount,
-                  { color: tx.type === 'income' ? theme.success : tx.type === 'expense' ? theme.danger : theme.primary },
-                ]}
-              >
-                {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
-                {formatMoney(tx.amount, currency)}
-              </Text>
-            </View>
+              <View style={styles.movementRight}>
+                <Text
+                  style={[
+                    styles.amount,
+                    { color: tx.type === 'income' ? theme.success : tx.type === 'expense' ? theme.danger : theme.primary },
+                  ]}
+                >
+                  {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
+                  {formatMoney(tx.amount, currency)}
+                </Text>
+                <Text style={[styles.editHint, { color: theme.primary }]}>Editar</Text>
+              </View>
+            </Pressable>
           ))}
         </PremiumCard>
       </ScrollView>
+
+      <QuickAddTransactionModal
+        open={Boolean(editingTx)}
+        editingTransaction={editingTx}
+        onClose={() => setEditingTx(null)}
+      />
     </Screen>
   );
 }
@@ -217,6 +229,14 @@ const styles = StyleSheet.create({
   },
   amount: {
     fontWeight: '700',
+  },
+  movementRight: {
+    alignItems: 'flex-end',
+  },
+  editHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   emptyText: {
     fontSize: 13,

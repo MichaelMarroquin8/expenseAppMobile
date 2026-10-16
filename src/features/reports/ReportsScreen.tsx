@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatMoney, monthKey } from '../../core/utils/format';
+import { formatMoney, monthKey, monthKeyFromIso } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 const weekBucket = (dateIso: string): string => {
@@ -19,7 +19,7 @@ export function ReportsScreen() {
   const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
   const current = monthKey();
-  const monthly = transactions.filter((tx) => tx.occurredAt.startsWith(current));
+  const monthly = transactions.filter((tx) => monthKeyFromIso(tx.occurredAt) === current);
 
   const monthlyIncome = monthly.filter((tx) => tx.type === 'income').reduce((acc, tx) => acc + tx.amount, 0);
   const monthlyExpense = monthly.filter((tx) => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0);

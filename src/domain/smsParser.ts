@@ -45,14 +45,18 @@ const parseAmountValue = (rawValue?: string): number | undefined => {
 
   const lastComma = cleaned.lastIndexOf(',');
   const lastDot = cleaned.lastIndexOf('.');
-  const decimalSeparator = lastComma > lastDot ? ',' : '.';
   const decimalIndex = Math.max(lastComma, lastDot);
 
   let normalized = cleaned;
   if (decimalIndex >= 0) {
     const integerPart = cleaned.slice(0, decimalIndex).replace(/[.,]/g, '');
     const decimalPart = cleaned.slice(decimalIndex + 1).replace(/[.,]/g, '');
-    normalized = `${integerPart}.${decimalPart}`;
+    // COP suele usar . como miles: 321.900 -> sin decimales si la parte final tiene 3 dígitos y no coexisten ',' y '.'
+    if (decimalPart.length === 3 && (lastComma === -1 || lastDot === -1)) {
+      normalized = `${integerPart}${decimalPart}`;
+    } else {
+      normalized = `${integerPart}.${decimalPart}`;
+    }
   } else {
     normalized = cleaned.replace(/[.,]/g, '');
   }
@@ -139,10 +143,13 @@ export const isLikelyDuplicate = (
   existingTransactions: Transaction[],
   existingDetections: SmsDetection[],
 ): boolean => {
-  const sameDetection = existingDetections.some((item) => item.id === candidate.id);
-  if (sameDetection) return true;
+  const samePendingDetection = existingDetections.some(
+    (item) => item.id === candidate.id && item.status === 'pending',
+  );
+  if (samePendingDetection) return true;
 
   const sameTransaction = existingTransactions.some((tx) => {
+    if (tx.detectionId && tx.detectionId === candidate.id) return true;
     if (!candidate.amount || !candidate.occurredAt) return false;
     const sameAmount = Math.abs(tx.amount - candidate.amount) < 0.01;
     const sameDay =

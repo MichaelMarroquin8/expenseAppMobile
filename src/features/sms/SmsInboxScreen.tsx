@@ -11,7 +11,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PremiumCard, Screen, SectionTitle } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
-import { formatMoney, formatShortDate } from "../../core/utils/format";
+import {
+  formatAmountInput,
+  formatMoney,
+  formatShortDate,
+  parseAmountInput,
+} from "../../core/utils/format";
 import { useFinanceStore } from "../../store/useFinanceStore";
 import { SmsRawInput } from "../../domain/smsParser";
 import {
@@ -45,9 +50,17 @@ export function SmsInboxScreen() {
   const processNotificationBatch = useFinanceStore(
     (state) => state.processNotificationBatch,
   );
+  const updateSmsDetection = useFinanceStore(
+    (state) => state.updateSmsDetection,
+  );
   const acceptSms = useFinanceStore((state) => state.acceptSms);
   const discardSms = useFinanceStore((state) => state.discardSms);
   const cards = useFinanceStore((state) => state.cards);
+
+  const [editingDetectionId, setEditingDetectionId] = useState<string | null>(
+    null,
+  );
+  const [editingAmountRaw, setEditingAmountRaw] = useState("");
 
   const [manualSender, setManualSender] = useState("85540");
   const [manualMessage, setManualMessage] = useState("");
@@ -403,9 +416,65 @@ export function SmsInboxScreen() {
                 {item.channel.toUpperCase()} •{" "}
                 {item.trustedSource ? "Confiable" : "No verificado"}
               </Text>
-              <Text style={[styles.amount, { color: theme.danger }]}>
-                {formatMoney(item.amount ?? 0, currency)}
-              </Text>
+              <View style={styles.amountRow}>
+                <Text style={[styles.amount, { color: theme.danger }]}>
+                  {formatMoney(item.amount ?? 0, currency)}
+                </Text>
+                <Pressable
+                  style={[styles.editAmountBtn, { borderColor: theme.border }]}
+                  onPress={() => {
+                    if (editingDetectionId === item.id) {
+                      setEditingDetectionId(null);
+                      setEditingAmountRaw("");
+                    } else {
+                      setEditingDetectionId(item.id);
+                      setEditingAmountRaw(
+                        parseAmountInput(String(item.amount ?? ""), currency),
+                      );
+                    }
+                  }}
+                >
+                  <Text
+                    style={[styles.editAmountBtnText, { color: theme.primary }]}
+                  >
+                    {editingDetectionId === item.id ? "Cancelar" : "Editar monto"}
+                  </Text>
+                </Pressable>
+              </View>
+              {editingDetectionId === item.id ? (
+                <View style={styles.editAmountBox}>
+                  <TextInput
+                    value={formatAmountInput(editingAmountRaw, currency)}
+                    onChangeText={(val) =>
+                      setEditingAmountRaw(parseAmountInput(val, currency))
+                    }
+                    placeholder="Nuevo monto"
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="decimal-pad"
+                    style={[
+                      styles.input,
+                      styles.editAmountInput,
+                      { color: theme.text, borderColor: theme.border },
+                    ]}
+                  />
+                  <Pressable
+                    style={[
+                      styles.saveAmountBtn,
+                      { backgroundColor: theme.primary },
+                    ]}
+                    onPress={() => {
+                      const nextAmount = Number(editingAmountRaw);
+                      if (!Number.isNaN(nextAmount) && nextAmount > 0) {
+                        updateSmsDetection(item.id, { amount: nextAmount });
+                      }
+                      setEditingDetectionId(null);
+                      setEditingAmountRaw("");
+                    }}
+                  >
+                    <Text style={styles.primaryButtonText}>Guardar</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <Text style={[styles.meta, { color: theme.textMuted }]}>
                 {item.occurredAt
                   ? formatShortDate(item.occurredAt)
@@ -426,13 +495,14 @@ export function SmsInboxScreen() {
               )}
               {item.duplicate ? (
                 <Text style={[styles.meta, { color: theme.warning }]}>
-                  Posible duplicado detectado
+                  Aviso: ya existe un movimiento similar hoy (puedes confirmarlo
+                  si es una compra distinta)
                 </Text>
               ) : null}
               <View style={styles.actions}>
                 <Pressable
                   style={[styles.actionBtn, { backgroundColor: theme.success }]}
-                  disabled={item.duplicate || !item.amount}
+                  disabled={!item.amount || item.amount <= 0}
                   onPress={() => acceptSms(item.id)}
                 >
                   <Text style={styles.actionText}>Confirmar</Text>
@@ -491,7 +561,32 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: "#fff", fontWeight: "700" },
   merchant: { fontWeight: "700", fontSize: 16 },
   meta: { marginTop: 4, fontSize: 12 },
-  amount: { marginTop: 8, fontSize: 20, fontWeight: "800" },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  amount: { fontSize: 20, fontWeight: "800" },
+  editAmountBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  editAmountBtnText: { fontSize: 12, fontWeight: "600" },
+  editAmountBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+  },
+  editAmountInput: { flex: 1, marginBottom: 0 },
+  saveAmountBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
   actions: { flexDirection: "row", gap: 8, marginTop: 12 },
   actionBtn: {
     flex: 1,

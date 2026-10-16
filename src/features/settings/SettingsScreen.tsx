@@ -1,8 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { findCurrency, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useFinanceStore } from '../../store/useFinanceStore';
@@ -14,14 +16,18 @@ export function SettingsScreen() {
   const { user, isConfigured, signOutCurrent } = useAuth();
   const settings = useFinanceStore((state) => state.settings);
   const updateSettings = useFinanceStore((state) => state.updateSettings);
-  const supportedCurrencies = ['COP', 'USD', 'MXN', 'EUR', 'PEN', 'CLP', 'ARS'];
+
+  const selectedCurrency = findCurrency(settings.currency);
+  const currencySubtitle = selectedCurrency
+    ? formatCurrencyLabel(selectedCurrency)
+    : settings.currency;
 
   return (
     <Screen>
       <ScrollView
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
-        <SectionTitle title="Configuración" subtitle="Preferencias, modo oscuro y autenticación local futura" />
+        <SectionTitle title="Más" subtitle="Preferencias, módulos y cuenta" />
 
         {isConfigured ? (
           <PremiumCard>
@@ -30,6 +36,7 @@ export function SettingsScreen() {
               {user?.email ?? 'Usuario autenticado'}
             </Text>
             <Pressable
+              android_ripple={null}
               style={[styles.linkButton, { borderColor: theme.border, marginTop: 8 }]}
               onPress={() => signOutCurrent()}
             >
@@ -44,11 +51,15 @@ export function SettingsScreen() {
             {(['light', 'dark', 'system'] as const).map((mode) => (
               <Pressable
                 key={mode}
+                android_ripple={null}
                 onPress={() => updateSettings({ colorScheme: mode })}
                 style={[
                   styles.chip,
                   { borderColor: theme.border },
-                  settings.colorScheme === mode && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
+                  settings.colorScheme === mode && {
+                    borderColor: theme.primary,
+                    backgroundColor: `${theme.primary}20`,
+                  },
                 ]}
               >
                 <Text style={[styles.chipText, { color: theme.text }]}>{mode}</Text>
@@ -58,22 +69,23 @@ export function SettingsScreen() {
         </PremiumCard>
 
         <PremiumCard>
-          <Text style={[styles.title, { color: theme.text }]}>Moneda</Text>
-          <View style={styles.row}>
-            {supportedCurrencies.map((currency) => (
-              <Pressable
-                key={currency}
-                onPress={() => updateSettings({ currency })}
-                style={[
-                  styles.chip,
-                  { borderColor: theme.border },
-                  settings.currency === currency && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
-                ]}
-              >
-                <Text style={[styles.chipText, { color: theme.text }]}>{currency}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={[styles.title, { color: theme.text }]}>Configuración</Text>
+          <Text style={[styles.note, { color: theme.textMuted, marginBottom: 10 }]}>
+            Preferencias generales de la app
+          </Text>
+          <Pressable
+            android_ripple={null}
+            style={[styles.selectRow, { borderColor: theme.border }]}
+            onPress={() => navigation.navigate('CurrencySelect')}
+          >
+            <View style={styles.selectTextCol}>
+              <Text style={[styles.selectLabel, { color: theme.text }]}>Moneda predeterminada</Text>
+              <Text style={[styles.selectValue, { color: theme.textMuted }]} numberOfLines={1}>
+                {currencySubtitle} · {settings.currency}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </Pressable>
         </PremiumCard>
 
         <PremiumCard>
@@ -92,19 +104,46 @@ export function SettingsScreen() {
         <PremiumCard>
           <Text style={[styles.title, { color: theme.text }]}>Módulos financieros</Text>
           <View style={styles.row}>
-            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Goals')}>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Budgets')}
+            >
+              <Text style={[styles.linkText, { color: theme.text }]}>Presupuestos</Text>
+            </Pressable>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Goals')}
+            >
               <Text style={[styles.linkText, { color: theme.text }]}>Metas de ahorro</Text>
             </Pressable>
-            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Reports')}>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Reports')}
+            >
               <Text style={[styles.linkText, { color: theme.text }]}>Reportes</Text>
             </Pressable>
-            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Cards')}>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Cards')}
+            >
               <Text style={[styles.linkText, { color: theme.text }]}>Tarjetas</Text>
             </Pressable>
-            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Accounts')}>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Accounts')}
+            >
               <Text style={[styles.linkText, { color: theme.text }]}>Cuentas</Text>
             </Pressable>
-            <Pressable style={[styles.linkButton, { borderColor: theme.border }]} onPress={() => navigation.navigate('Categories')}>
+            <Pressable
+              android_ripple={null}
+              style={[styles.linkButton, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Categories')}
+            >
               <Text style={[styles.linkText, { color: theme.text }]}>Categorías</Text>
             </Pressable>
           </View>
@@ -124,4 +163,17 @@ const styles = StyleSheet.create({
   note: { marginTop: 8, fontSize: 12 },
   linkButton: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   linkText: { fontWeight: '600' },
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  selectTextCol: { flex: 1, gap: 4 },
+  selectLabel: { fontWeight: '700', fontSize: 15 },
+  selectValue: { fontSize: 13 },
 });
