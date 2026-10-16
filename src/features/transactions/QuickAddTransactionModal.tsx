@@ -759,39 +759,56 @@ export function QuickAddTransactionModal({
                 ))}
               </View>
               <View style={styles.daysGrid}>
-                {calendarWeeks.map((week, weekIndex) => (
-                  <View key={`week-${weekIndex}`} style={styles.weekDaysRow}>
-                    {week.map((day) => {
-                      const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
-                      const isSelected = toLocalDateInput(day) === occurredAtInput;
-                      return (
-                        <Pressable
-                          key={`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`}
-                          style={[
-                            styles.dayCell,
-                            { borderColor: theme.border },
-                            isSelected && { backgroundColor: theme.primary, borderColor: theme.primary },
-                          ]}
-                          onPress={() => {
-                            setOccurredAtInput(toLocalDateInput(day));
-                            setShowCalendar(false);
-                          }}
-                        >
-                          <Text
+                {calendarWeeks.map((week, weekIndex) => {
+                  const hasCurrentMonthDay = week.some(
+                    (day) => day.getMonth() === calendarMonth.getMonth(),
+                  );
+                  if (!hasCurrentMonthDay) return null;
+
+                  return (
+                    <View key={`week-${weekIndex}`} style={styles.weekDaysRow}>
+                      {week.map((day) => {
+                        const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                        if (!isCurrentMonth) {
+                          return (
+                            <View
+                              key={`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`}
+                              style={styles.dayCellEmpty}
+                            />
+                          );
+                        }
+
+                        const isSelected = toLocalDateInput(day) === occurredAtInput;
+                        return (
+                          <Pressable
+                            key={`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`}
                             style={[
-                              styles.dayCellText,
-                              {
-                                color: isSelected ? '#fff' : isCurrentMonth ? theme.text : theme.textMuted,
+                              styles.dayCell,
+                              { borderColor: theme.border },
+                              isSelected && {
+                                backgroundColor: theme.primary,
+                                borderColor: theme.primary,
                               },
                             ]}
+                            onPress={() => {
+                              setOccurredAtInput(toLocalDateInput(day));
+                              setShowCalendar(false);
+                            }}
                           >
-                            {day.getDate()}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ))}
+                            <Text
+                              style={[
+                                styles.dayCellText,
+                                { color: isSelected ? '#fff' : theme.text },
+                              ]}
+                            >
+                              {day.getDate()}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
               </View>
             </Pressable>
           </Pressable>
@@ -1075,6 +1092,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  dayCellEmpty: {
+    flex: 1,
     paddingVertical: 8,
   },
   dayCellText: {
