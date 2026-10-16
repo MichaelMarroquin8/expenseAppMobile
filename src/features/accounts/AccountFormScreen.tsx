@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchQuote } from '../../backend/marketQuotes';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { PremiumCard, Screen } from '../../components/ui';
 import { CURRENCIES, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
@@ -86,7 +86,11 @@ export function AccountFormScreen() {
 
   useEffect(() => {
     if (!existing) {
-      setIcon((prev) => (ACCOUNT_ICON_OPTIONS.includes(prev as (typeof ACCOUNT_ICON_OPTIONS)[number]) ? prev : defaultIconForKind(kind)));
+      setIcon((prev) =>
+        ACCOUNT_ICON_OPTIONS.includes(prev as (typeof ACCOUNT_ICON_OPTIONS)[number])
+          ? prev
+          : defaultIconForKind(kind),
+      );
     }
   }, [kind, existing]);
 
@@ -111,6 +115,7 @@ export function AccountFormScreen() {
       setPriceCurrency(quote.currency);
       setPriceUpdatedAt(quote.asOf);
       setCurrency(quote.currency);
+      if (!name.trim()) setName(quote.symbol);
     } catch (error) {
       Alert.alert(
         'No se pudo actualizar',
@@ -121,10 +126,11 @@ export function AccountFormScreen() {
     }
   };
 
-  const save = () => {
-    const normalizedName = name.trim();
+  const save = useCallback(() => {
+    const ticker = symbol.trim().toUpperCase();
+    const normalizedName = name.trim() || ticker || provider.trim();
     if (!normalizedName) {
-      Alert.alert('Nombre requerido', 'Escribe un nombre para la cuenta.');
+      Alert.alert('Nombre requerido', 'Escribe al menos un nombre (o un ticker si es inversión).');
       return;
     }
 
@@ -133,7 +139,7 @@ export function AccountFormScreen() {
       name: normalizedName,
       provider: provider.trim() || normalizedName,
       kind,
-      balance: Number(balanceRaw) || 0,
+      balance: Math.max(Number(balanceRaw) || 0, 0),
       currency,
       color: existing?.color ?? palette[Math.floor(Math.random() * palette.length)],
       icon,
@@ -142,35 +148,42 @@ export function AccountFormScreen() {
     };
 
     if (investmentMode) {
-      const qty = Number(quantityRaw);
-      const price = Number(priceRaw);
-      if (!symbol.trim()) {
-        Alert.alert('Símbolo requerido', 'Para inversiones indica el ticker (ej. SPY).');
-        return;
-      }
-      if (!Number.isFinite(qty) || qty < 0) {
-        Alert.alert('Cantidad inválida', 'Indica cuántas acciones o unidades tienes.');
-        return;
-      }
+      const qty = quantityRaw.trim() === '' ? 0 : Number(quantityRaw);
+      const price = priceRaw.trim() === '' ? undefined : Number(priceRaw);
       account = {
         ...account,
-        symbol: symbol.trim().toUpperCase(),
-        quantity: qty,
-        lastPrice: Number.isFinite(price) && price >= 0 ? price : undefined,
+        symbol: ticker || undefined,
+        quantity: Number.isFinite(qty) && qty >= 0 ? qty : 0,
+        lastPrice: typeof price === 'number' && Number.isFinite(price) && price >= 0 ? price : undefined,
         priceCurrency: priceCurrency || currency,
         priceUpdatedAt,
       };
       account = syncInvestmentBalance(account);
-    } else if (Number.isNaN(Number(balanceRaw)) || Number(balanceRaw) < 0) {
-      Alert.alert('Importe inválido', 'Ingresa un saldo válido (0 o mayor).');
-      return;
     }
 
     upsertAccount(account);
     navigation.goBack();
-  };
+  }, [
+    balanceRaw,
+    currency,
+    excludeFromTotal,
+    existing,
+    icon,
+    investmentMode,
+    kind,
+    name,
+    navigation,
+    note,
+    priceCurrency,
+    priceRaw,
+    priceUpdatedAt,
+    provider,
+    quantityRaw,
+    symbol,
+    upsertAccount,
+  ]);
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     if (!existing) return;
     Alert.alert('Eliminar cuenta', `¿Eliminar “${existing.name}”?`, [
       { text: 'Cancelar', style: 'cancel' },
@@ -183,7 +196,55 @@ export function AccountFormScreen() {
         },
       },
     ]);
-  };
+  }, [deleteAccount, existing, navigation]);
+
+  const saveRef = useRef(save);
+  const deleteRef = useRef(confirmDelete);
+  saveRef.current = save;
+  deleteRef.current = confirmDelete;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerBackVisible: false,
+      headerTitleAlign: 'center',
+      headerTitle: existing ? 'Editar' : 'Nueva cuenta',
+      headerLeft: () => (
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          style={styles.headerBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Cancelar"
+        >
+          <Text style={[styles.headerCancel, { color: theme.primary }]}>Cancelar</Text>
+        </Pressable>
+      ),
+      headerRight: () => (
+        <View style={styles.headerRight}>
+          {existing ? (
+            <Pressable
+              onPress={() => deleteRef.current()}
+              hitSlop={10}
+              style={styles.headerIconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Eliminar"
+            >
+              <Ionicons name="trash-outline" size={22} color={theme.danger} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={() => saveRef.current()}
+            hitSlop={10}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Guardar"
+          >
+            <Ionicons name="checkmark" size={28} color={theme.primary} />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [existing, navigation, theme.danger, theme.primary]);
 
   const currencyLabel =
     CURRENCIES.find((item) => item.code === currency) != null
@@ -196,16 +257,9 @@ export function AccountFormScreen() {
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 40, 48) }]}
         keyboardShouldPersistTaps="handled"
       >
-        <SectionTitle
-          title={existing ? 'Editar cuenta' : 'Nueva cuenta'}
-          subtitle={
-            investmentMode
-              ? 'Ticker, cantidad y valor a la fecha'
-              : liabilityMode
-                ? 'Saldo = dinero que debes'
-                : 'Bancos, efectivo, virtuales y más'
-          }
-        />
+        <Text style={[styles.hintTop, { color: theme.textMuted }]}>
+          Guarda cuando quieras con ✓ arriba. El resto de campos es opcional.
+        </Text>
 
         <PremiumCard>
           <Text style={[styles.label, { color: theme.textMuted }]}>Nombre de la cuenta</Text>
@@ -215,15 +269,9 @@ export function AccountFormScreen() {
             placeholder="Ej. Bancolombia, Efectivo, SPY"
             placeholderTextColor={theme.textMuted}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-          />
-
-          <Text style={[styles.label, { color: theme.textMuted }]}>Entidad / proveedor</Text>
-          <TextInput
-            value={provider}
-            onChangeText={setProvider}
-            placeholder="Bancolombia, Nequi, Trii, Binance..."
-            placeholderTextColor={theme.textMuted}
-            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+            autoFocus={!existing}
+            returnKeyType="done"
+            onSubmitEditing={save}
           />
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Tipo</Text>
@@ -289,7 +337,7 @@ export function AccountFormScreen() {
                 value={quantityRaw}
                 onChangeText={setQuantityRaw}
                 keyboardType="decimal-pad"
-                placeholder="Ej. 2"
+                placeholder="Ej. 2 (opcional)"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
@@ -301,7 +349,7 @@ export function AccountFormScreen() {
                 value={formatAmountInput(priceRaw, priceCurrency || 'USD')}
                 onChangeText={(value) => setPriceRaw(parseAmountInput(value, priceCurrency || 'USD'))}
                 keyboardType="decimal-pad"
-                placeholder="Se rellena con Actualizar"
+                placeholder="Opcional · se rellena al actualizar"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
@@ -326,12 +374,21 @@ export function AccountFormScreen() {
                 value={formatAmountInput(balanceRaw, currency)}
                 onChangeText={(value) => setBalanceRaw(parseAmountInput(value, currency))}
                 keyboardType="decimal-pad"
-                placeholder="0"
+                placeholder="0 (opcional)"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
             </>
           )}
+
+          <Text style={[styles.label, { color: theme.textMuted }]}>Entidad / proveedor (opcional)</Text>
+          <TextInput
+            value={provider}
+            onChangeText={setProvider}
+            placeholder="Bancolombia, Nequi, Trii..."
+            placeholderTextColor={theme.textMuted}
+            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+          />
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Icono</Text>
           <View style={styles.iconGrid}>
@@ -364,24 +421,14 @@ export function AccountFormScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textMuted }]}>Nota</Text>
+          <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
           <TextInput
             value={note}
             onChangeText={setNote}
             placeholder="Opcional"
             placeholderTextColor={theme.textMuted}
-            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+            style={[styles.input, { color: theme.text, borderColor: theme.border, marginBottom: 0 }]}
           />
-
-          <Pressable style={[styles.saveButton, { backgroundColor: theme.primary }]} onPress={save}>
-            <Text style={styles.saveButtonText}>{existing ? 'Guardar cambios' : 'Crear cuenta'}</Text>
-          </Pressable>
-
-          {existing ? (
-            <Pressable style={styles.deleteButton} onPress={confirmDelete}>
-              <Text style={[styles.deleteText, { color: theme.danger }]}>Eliminar cuenta</Text>
-            </Pressable>
-          ) : null}
         </PremiumCard>
       </ScrollView>
 
@@ -447,6 +494,7 @@ export function AccountFormScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
+  hintTop: { fontSize: 13, marginBottom: 10, lineHeight: 18 },
   label: { fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 4 },
   input: {
     borderWidth: 1,
@@ -496,10 +544,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   switchLabel: { fontWeight: '600', fontSize: 14 },
-  saveButton: { borderRadius: 12, alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  saveButtonText: { color: '#fff', fontWeight: '700' },
-  deleteButton: { alignItems: 'center', paddingVertical: 14 },
-  deleteText: { fontWeight: '700', fontSize: 14 },
+  headerBtn: { paddingHorizontal: 4, paddingVertical: 4 },
+  headerCancel: { fontSize: 16, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerIconBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

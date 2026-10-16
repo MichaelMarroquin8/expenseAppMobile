@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
   Pressable,
@@ -24,6 +25,19 @@ const formatDayHeader = (isoDate: string) =>
     month: "short",
   }).format(new Date(isoDate));
 
+const formatMonthLabel = (key: string) => {
+  const [year, month] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-CO", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month - 1, 1));
+};
+
+const shiftMonthKey = (key: string, delta: number) => {
+  const [year, month] = key.split("-").map(Number);
+  return monthKey(new Date(year, month - 1 + delta, 1));
+};
+
 export function TransactionsScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -36,25 +50,67 @@ export function TransactionsScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [movementFilter, setMovementFilter] = useState<MovementFilter>("all");
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() => monthKey());
+
+  const currentMonthKey = monthKey();
+
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    const oldestKey = transactions.reduce((oldest, tx) => {
+      const key = monthKeyFromIso(tx.occurredAt);
+      return key < oldest ? key : oldest;
+    }, currentMonthKey);
+
+    const [oldestYear, oldestMonth] = oldestKey.split("-").map(Number);
+    const oldestDate = new Date(oldestYear, oldestMonth - 1, 1);
+    const months: { id: string; label: string }[] = [];
+    let cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    while (cursor >= oldestDate) {
+      const id = monthKey(cursor);
+      const offsetMonths =
+        (now.getFullYear() - cursor.getFullYear()) * 12 +
+        (now.getMonth() - cursor.getMonth());
+      months.push({
+        id,
+        label:
+          offsetMonths === 0
+            ? "Este mes"
+            : offsetMonths === 1
+              ? "Mes pasado"
+              : new Intl.DateTimeFormat("es-CO", {
+                  month: "short",
+                  year: "2-digit",
+                }).format(cursor),
+      });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+    }
+
+    return months;
+  }, [transactions, currentMonthKey]);
+
+  const oldestMonthKey =
+    monthOptions[monthOptions.length - 1]?.id ?? currentMonthKey;
+  const canGoNext = selectedMonthKey < currentMonthKey;
+  const canGoPrev = selectedMonthKey > oldestMonthKey;
 
   const filtered = useMemo<Transaction[]>(() => {
     const q = search.trim().toLowerCase();
     return transactions.filter((tx) => {
+      const matchesMonth = monthKeyFromIso(tx.occurredAt) === selectedMonthKey;
       const matchesSearch =
         !q ||
         tx.merchant.toLowerCase().includes(q) ||
         tx.category.toLowerCase().includes(q);
       const matchesType =
         movementFilter === "all" || tx.type === movementFilter;
-      return matchesSearch && matchesType;
+      return matchesMonth && matchesSearch && matchesType;
     });
-  }, [search, transactions, movementFilter]);
+  }, [search, transactions, movementFilter, selectedMonthKey]);
 
   const monthSummary = useMemo(() => {
-    const now = new Date();
-    const currentMonthKey = monthKey(now);
     const monthlyTx = transactions.filter(
-      (tx) => monthKeyFromIso(tx.occurredAt) === currentMonthKey,
+      (tx) => monthKeyFromIso(tx.occurredAt) === selectedMonthKey,
     );
     const totalIncome = monthlyTx
       .filter((tx) => tx.type === "income")
@@ -66,12 +122,9 @@ export function TransactionsScreen() {
       totalIncome,
       totalExpense,
       net: totalIncome - totalExpense,
-      monthLabel: new Intl.DateTimeFormat("es-CO", {
-        month: "long",
-        year: "numeric",
-      }).format(now),
+      monthLabel: formatMonthLabel(selectedMonthKey),
     };
-  }, [transactions]);
+  }, [transactions, selectedMonthKey]);
 
   const groupedByDay = useMemo(() => {
     const groups = filtered.reduce<Record<string, Transaction[]>>((acc, tx) => {
@@ -117,10 +170,77 @@ export function TransactionsScreen() {
           subtitle="Libro diario de gastos e ingresos"
         />
 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.periodRow}
+        >
+          {monthOptions.map((option) => {
+            const active = option.id === selectedMonthKey;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => setSelectedMonthKey(option.id)}
+                style={styles.periodItem}
+              >
+                <Text
+                  style={[
+                    styles.periodLabel,
+                    { color: active ? theme.primary : theme.textMuted },
+                    active && styles.periodLabelActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {active ? (
+                  <View
+                    style={[
+                      styles.periodUnderline,
+                      { backgroundColor: theme.primary },
+                    ]}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
         <PremiumCard>
-          <Text style={[styles.monthLabel, { color: theme.textMuted }]}>
-            {monthSummary.monthLabel}
-          </Text>
+          <View style={styles.monthNav}>
+            <Pressable
+              onPress={() =>
+                canGoPrev &&
+                setSelectedMonthKey(shiftMonthKey(selectedMonthKey, -1))
+              }
+              disabled={!canGoPrev}
+              hitSlop={10}
+              style={[styles.monthNavButton, !canGoPrev && styles.monthNavDisabled]}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={20}
+                color={canGoPrev ? theme.text : theme.textMuted}
+              />
+            </Pressable>
+            <Text style={[styles.monthLabel, { color: theme.text }]}>
+              {monthSummary.monthLabel}
+            </Text>
+            <Pressable
+              onPress={() =>
+                canGoNext &&
+                setSelectedMonthKey(shiftMonthKey(selectedMonthKey, 1))
+              }
+              disabled={!canGoNext}
+              hitSlop={10}
+              style={[styles.monthNavButton, !canGoNext && styles.monthNavDisabled]}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={canGoNext ? theme.text : theme.textMuted}
+              />
+            </Pressable>
+          </View>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryCaption, { color: theme.textMuted }]}>
@@ -316,7 +436,11 @@ export function TransactionsScreen() {
         {groupedByDay.length === 0 ? (
           <PremiumCard>
             <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-              No hay movimientos con los filtros actuales.
+              No hay movimientos en {monthSummary.monthLabel}
+              {search.trim() || movementFilter !== "all"
+                ? " con los filtros actuales"
+                : ""}
+              .
             </Text>
           </PremiumCard>
         ) : null}
@@ -336,10 +460,45 @@ export function TransactionsScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
+  periodRow: {
+    gap: 18,
+    paddingHorizontal: 4,
+    paddingBottom: 12,
+  },
+  periodItem: {
+    alignItems: "center",
+    paddingBottom: 6,
+  },
+  periodLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    textTransform: "capitalize",
+  },
+  periodLabelActive: {
+    fontWeight: "700",
+  },
+  periodUnderline: {
+    marginTop: 6,
+    height: 2,
+    width: "100%",
+    borderRadius: 2,
+  },
+  monthNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  monthNavButton: {
+    padding: 4,
+  },
+  monthNavDisabled: {
+    opacity: 0.35,
+  },
   monthLabel: {
     textTransform: "capitalize",
-    marginBottom: 8,
-    fontWeight: "600",
+    fontWeight: "700",
+    fontSize: 16,
   },
   summaryRow: {
     flexDirection: "row",

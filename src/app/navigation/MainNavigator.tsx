@@ -195,9 +195,11 @@ export function MainNavigator() {
           name="AccountForm"
           component={AccountFormScreen}
           options={({ route }) => ({
-            title: route.params && "accountId" in route.params && route.params.accountId
-              ? "Editar"
-              : "Nueva cuenta",
+            headerTitleAlign: "center",
+            title:
+              route.params && "accountId" in route.params && route.params.accountId
+                ? "Editar"
+                : "Nueva cuenta",
           })}
         />
         <Stack.Screen
