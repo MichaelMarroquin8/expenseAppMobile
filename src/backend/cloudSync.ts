@@ -6,6 +6,7 @@ export interface FinanceCloudSnapshot {
   onboardingDone: boolean;
   transactions: Transaction[];
   transactionCategories: string[];
+  incomeCategories?: string[];
   categoryIcons: Record<string, string>;
   accounts: FinanceAccount[];
   budgets: Budget[];

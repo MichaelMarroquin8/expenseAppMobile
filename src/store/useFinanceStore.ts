@@ -27,10 +27,13 @@ const mergeDetections = (
   return unique.slice(0, 80);
 };
 
+export type CategoryKind = 'expense' | 'income';
+
 interface FinanceState {
   onboardingDone: boolean;
   transactions: Transaction[];
   transactionCategories: string[];
+  incomeCategories: string[];
   categoryIcons: Record<string, string>;
   accounts: FinanceAccount[];
   budgets: Budget[];
@@ -40,8 +43,8 @@ interface FinanceState {
   settings: AppSettings;
   finishOnboarding: () => void;
   addTransaction: (payload: Omit<Transaction, 'id'>) => void;
-  addTransactionCategory: (category: string) => void;
-  removeTransactionCategory: (category: string) => void;
+  addTransactionCategory: (category: string, kind?: CategoryKind) => void;
+  removeTransactionCategory: (category: string, kind?: CategoryKind) => void;
   setCategoryIcon: (category: string, icon: string) => void;
   upsertAccount: (account: FinanceAccount) => void;
   updateTransaction: (id: string, payload: Partial<Transaction>) => void;
@@ -64,8 +67,16 @@ const defaultTransactionCategories = [
   'Supermercado',
   'Entretenimiento',
   'Servicios',
-  'Salario',
   'Otros',
+];
+
+const defaultIncomeCategories = [
+  'Salario',
+  'Freelance',
+  'Inversiones',
+  'Ventas',
+  'Regalo',
+  'Otros ingresos',
 ];
 
 const defaultCategoryIcons: Record<string, string> = {
@@ -74,8 +85,13 @@ const defaultCategoryIcons: Record<string, string> = {
   Supermercado: 'basket-outline',
   Entretenimiento: 'game-controller-outline',
   Servicios: 'flash-outline',
-  Salario: 'cash-outline',
   Otros: 'apps-outline',
+  Salario: 'cash-outline',
+  Freelance: 'briefcase-outline',
+  Inversiones: 'trending-up-outline',
+  Ventas: 'storefront-outline',
+  Regalo: 'gift-outline',
+  'Otros ingresos': 'wallet-outline',
 };
 
 const initialSettings: AppSettings = {
@@ -134,6 +150,7 @@ export const useFinanceStore = create<FinanceState>()(
       onboardingDone: false,
       transactions: [],
       transactionCategories: defaultTransactionCategories,
+      incomeCategories: defaultIncomeCategories,
       categoryIcons: defaultCategoryIcons,
       accounts: [],
       budgets: [],
@@ -147,31 +164,45 @@ export const useFinanceStore = create<FinanceState>()(
           transactions: [{ ...payload, id: createId('tx') }, ...state.transactions],
           accounts: applyAccountMovement(state.accounts, payload, 'apply'),
         })),
-      addTransactionCategory: (category) =>
+      addTransactionCategory: (category, kind = 'expense') =>
         set((state) => {
           const normalized = category.trim();
           if (!normalized) return state;
-          const alreadyExists = state.transactionCategories.some(
+          const listKey = kind === 'income' ? 'incomeCategories' : 'transactionCategories';
+          const currentList = state[listKey];
+          const alreadyExists = currentList.some(
             (item) => item.toLowerCase() === normalized.toLowerCase(),
           );
           if (alreadyExists) return state;
           return {
-            transactionCategories: [...state.transactionCategories, normalized],
+            [listKey]: [...currentList, normalized],
             categoryIcons: {
               ...state.categoryIcons,
-              [normalized]: 'pricetag-outline',
+              [normalized]: state.categoryIcons[normalized] ?? (kind === 'income' ? 'cash-outline' : 'pricetag-outline'),
             },
           };
         }),
-      removeTransactionCategory: (category) =>
+      removeTransactionCategory: (category, kind = 'expense') =>
         set((state) => {
-          const protectedCategories = ['Otros', 'Salario'];
+          const protectedCategories = ['Otros', 'Salario', 'Otros ingresos'];
           if (protectedCategories.includes(category)) return state;
+          const nextExpenses =
+            kind === 'expense'
+              ? state.transactionCategories.filter((item) => item !== category)
+              : state.transactionCategories;
+          const nextIncomes =
+            kind === 'income'
+              ? state.incomeCategories.filter((item) => item !== category)
+              : state.incomeCategories;
+          const stillUsed = nextExpenses.includes(category) || nextIncomes.includes(category);
           return {
-            transactionCategories: state.transactionCategories.filter((item) => item !== category),
-            categoryIcons: Object.fromEntries(
-              Object.entries(state.categoryIcons).filter(([key]) => key !== category),
-            ),
+            transactionCategories: nextExpenses,
+            incomeCategories: nextIncomes,
+            categoryIcons: stillUsed
+              ? state.categoryIcons
+              : Object.fromEntries(
+                  Object.entries(state.categoryIcons).filter(([key]) => key !== category),
+                ),
           };
         }),
       setCategoryIcon: (category, icon) =>
@@ -325,14 +356,22 @@ export const useFinanceStore = create<FinanceState>()(
           ),
         };
 
+        const rawExpenseCategories =
+          Array.isArray(persisted.transactionCategories) && persisted.transactionCategories.length > 0
+            ? persisted.transactionCategories.filter((item) => item !== 'Salario')
+            : currentState.transactionCategories;
+        const rawIncomeCategories =
+          Array.isArray(persisted.incomeCategories) && persisted.incomeCategories.length > 0
+            ? persisted.incomeCategories
+            : currentState.incomeCategories;
+
         return {
           ...currentState,
           ...persisted,
           onboardingDone: coerceBoolean(persisted.onboardingDone, currentState.onboardingDone),
           transactionCategories:
-            Array.isArray(persisted.transactionCategories) && persisted.transactionCategories.length > 0
-              ? persisted.transactionCategories
-              : currentState.transactionCategories,
+            rawExpenseCategories.length > 0 ? rawExpenseCategories : currentState.transactionCategories,
+          incomeCategories: rawIncomeCategories,
           categoryIcons: {
             ...defaultCategoryIcons,
             ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
@@ -345,6 +384,7 @@ export const useFinanceStore = create<FinanceState>()(
         onboardingDone: state.onboardingDone,
         transactions: state.transactions,
         transactionCategories: state.transactionCategories,
+        incomeCategories: state.incomeCategories,
         categoryIcons: state.categoryIcons,
         accounts: state.accounts,
         budgets: state.budgets,

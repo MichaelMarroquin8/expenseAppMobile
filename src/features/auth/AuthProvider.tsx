@@ -29,6 +29,7 @@ const extractSnapshot = (): FinanceCloudSnapshot => {
     onboardingDone: state.onboardingDone,
     transactions: state.transactions,
     transactionCategories: state.transactionCategories,
+    incomeCategories: state.incomeCategories,
     categoryIcons: state.categoryIcons,
     accounts: state.accounts,
     budgets: state.budgets,
@@ -62,7 +63,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         syncPausedRef.current = true;
         const cloud = await loadCloudSnapshot(nextUser.uid);
         if (cloud) {
-          useFinanceStore.setState(cloud);
+          const current = useFinanceStore.getState();
+          useFinanceStore.setState({
+            ...cloud,
+            transactionCategories: Array.isArray(cloud.transactionCategories)
+              ? cloud.transactionCategories.filter((item) => item !== 'Salario')
+              : current.transactionCategories,
+            incomeCategories:
+              Array.isArray(cloud.incomeCategories) && cloud.incomeCategories.length > 0
+                ? cloud.incomeCategories
+                : current.incomeCategories,
+          });
         } else {
           await saveCloudSnapshot(nextUser.uid, extractSnapshot());
         }
