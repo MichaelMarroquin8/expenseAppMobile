@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import React, { useMemo, useState } from "react";
 import {
   Pressable,
@@ -9,9 +10,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PremiumCard, Screen, SectionTitle } from "../../components/ui";
+import { PremiumCard, Screen } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from "../../core/utils/format";
+import { isBalanceAdjustment } from "../../domain/accounts";
 import { Transaction } from "../../domain/models";
 import { useFinanceStore } from "../../store/useFinanceStore";
 import { QuickAddTransactionModal } from "./QuickAddTransactionModal";
@@ -41,6 +43,7 @@ const shiftMonthKey = (key: string, delta: number) => {
 export function TransactionsScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const currency = useFinanceStore((state) => state.settings.currency);
   const transactions = useFinanceStore((state) => state.transactions);
   const accounts = useFinanceStore((state) => state.accounts);
@@ -97,6 +100,7 @@ export function TransactionsScreen() {
   const filtered = useMemo<Transaction[]>(() => {
     const q = search.trim().toLowerCase();
     return transactions.filter((tx) => {
+      if (isBalanceAdjustment(tx)) return false;
       const matchesMonth = monthKeyFromIso(tx.occurredAt) === selectedMonthKey;
       const matchesSearch =
         !q ||
@@ -110,7 +114,8 @@ export function TransactionsScreen() {
 
   const monthSummary = useMemo(() => {
     const monthlyTx = transactions.filter(
-      (tx) => monthKeyFromIso(tx.occurredAt) === selectedMonthKey,
+      (tx) =>
+        !isBalanceAdjustment(tx) && monthKeyFromIso(tx.occurredAt) === selectedMonthKey,
     );
     const totalIncome = monthlyTx
       .filter((tx) => tx.type === "income")
@@ -165,10 +170,37 @@ export function TransactionsScreen() {
           { paddingBottom: Math.max(insets.bottom + 170, 190) },
         ]}
       >
-        <SectionTitle
-          title="Mis movimientos"
-          subtitle="Libro diario de gastos e ingresos"
-        />
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>
+              Mis movimientos
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textMuted }]}>
+              Libro diario de gastos e ingresos
+            </Text>
+          </View>
+
+          <PremiumCard style={styles.accountsCard}>
+            <Pressable
+              android_ripple={null}
+              style={styles.accountsLink}
+              onPress={() => navigation.navigate("Accounts")}
+            >
+              <Ionicons name="wallet-outline" size={16} color={theme.primary} />
+              <View>
+                <Text style={[styles.accountsTitle, { color: theme.text }]}>
+                  Cuentas
+                </Text>
+                <Text style={[styles.accountsMeta, { color: theme.textMuted }]}>
+                  {accounts.length === 1
+                    ? "1 cuenta"
+                    : `${accounts.length} cuentas`}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
+            </Pressable>
+          </PremiumCard>
+        </View>
 
         <ScrollView
           horizontal
@@ -269,12 +301,32 @@ export function TransactionsScreen() {
           </View>
 
           <View style={styles.segmentGroup}>
+            <Pressable
+              onPress={() => setMovementFilter("all")}
+              style={[
+                styles.segmentChipFull,
+                { borderColor: theme.border },
+                movementFilter === "all" && {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  { color: movementFilter === "all" ? "#fff" : theme.text },
+                ]}
+              >
+                Todos
+              </Text>
+            </Pressable>
             <View style={styles.segmentRow}>
               {(
                 [
-                  { id: "all", label: "Todos" },
                   { id: "expense", label: "Gastos" },
                   { id: "income", label: "Ingresos" },
+                  { id: "transfer", label: "Transferencias" },
                 ] as const
               ).map((item) => (
                 <Pressable
@@ -300,26 +352,6 @@ export function TransactionsScreen() {
                 </Pressable>
               ))}
             </View>
-            <Pressable
-              onPress={() => setMovementFilter("transfer")}
-              style={[
-                styles.segmentChipFull,
-                { borderColor: theme.border },
-                movementFilter === "transfer" && {
-                  backgroundColor: theme.primary,
-                  borderColor: theme.primary,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  { color: movementFilter === "transfer" ? "#fff" : theme.text },
-                ]}
-              >
-                Transferencias
-              </Text>
-            </Pressable>
           </View>
 
           <TextInput
@@ -460,6 +492,31 @@ export function TransactionsScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 12,
+  },
+  headerCopy: { flex: 1 },
+  headerTitle: { fontSize: 18, fontWeight: "700" },
+  headerSubtitle: { fontSize: 13, marginTop: 2 },
+  accountsCard: {
+    padding: 0,
+    marginBottom: 0,
+    borderRadius: 14,
+    alignSelf: "center",
+  },
+  accountsLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  accountsTitle: { fontWeight: "700", fontSize: 13 },
+  accountsMeta: { fontSize: 11, marginTop: 1 },
   periodRow: {
     gap: 18,
     paddingHorizontal: 4,

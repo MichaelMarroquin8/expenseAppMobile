@@ -18,7 +18,15 @@ import { fetchQuote } from '../../backend/marketQuotes';
 import { PremiumCard, Screen } from '../../components/ui';
 import { CURRENCIES, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
+import {
+  formatAmountInput,
+  formatMoney,
+  formatQuantityInput,
+  parseAmountInput,
+  parseQuantityInput,
+  quantityFromRaw,
+  quantityToRaw,
+} from '../../core/utils/format';
 import {
   ACCOUNT_ICON_OPTIONS,
   ACCOUNT_KIND_LABELS,
@@ -70,7 +78,7 @@ export function AccountFormScreen() {
   const [excludeFromTotal, setExcludeFromTotal] = useState(existing?.excludeFromTotal ?? false);
   const [symbol, setSymbol] = useState(existing?.symbol ?? '');
   const [quantityRaw, setQuantityRaw] = useState(
-    existing?.quantity != null ? String(existing.quantity) : '',
+    existing?.quantity != null ? quantityToRaw(existing.quantity) : '',
   );
   const [priceRaw, setPriceRaw] = useState(
     existing?.lastPrice != null ? String(existing.lastPrice) : '',
@@ -95,9 +103,9 @@ export function AccountFormScreen() {
   }, [kind, existing]);
 
   const computedInvestmentValue = useMemo(() => {
-    const qty = Number(quantityRaw);
+    const qty = quantityFromRaw(quantityRaw);
     const price = Number(priceRaw);
-    if (!Number.isFinite(qty) || !Number.isFinite(price)) return null;
+    if (!quantityRaw || quantityRaw === '.' || !Number.isFinite(price)) return null;
     return qty * price;
   }, [quantityRaw, priceRaw]);
 
@@ -139,7 +147,9 @@ export function AccountFormScreen() {
       name: normalizedName,
       provider: provider.trim() || normalizedName,
       kind,
-      balance: Math.max(Number(balanceRaw) || 0, 0),
+      balance:
+        existing && !investmentMode ? existing.balance : Math.max(Number(balanceRaw) || 0, 0),
+      last4: existing?.last4,
       currency,
       color: existing?.color ?? palette[Math.floor(Math.random() * palette.length)],
       icon,
@@ -148,12 +158,12 @@ export function AccountFormScreen() {
     };
 
     if (investmentMode) {
-      const qty = quantityRaw.trim() === '' ? 0 : Number(quantityRaw);
+      const qty = quantityRaw.trim() === '' ? 0 : quantityFromRaw(quantityRaw);
       const price = priceRaw.trim() === '' ? undefined : Number(priceRaw);
       account = {
         ...account,
         symbol: ticker || undefined,
-        quantity: Number.isFinite(qty) && qty >= 0 ? qty : 0,
+        quantity: qty,
         lastPrice: typeof price === 'number' && Number.isFinite(price) && price >= 0 ? price : undefined,
         priceCurrency: priceCurrency || currency,
         priceUpdatedAt,
@@ -332,15 +342,32 @@ export function AccountFormScreen() {
                 </Pressable>
               </View>
 
-              <Text style={[styles.label, { color: theme.textMuted }]}>Cantidad (acciones / unidades)</Text>
-              <TextInput
-                value={quantityRaw}
-                onChangeText={setQuantityRaw}
-                keyboardType="decimal-pad"
-                placeholder="Ej. 2 (opcional)"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-              />
+              <Text style={[styles.label, { color: theme.textMuted }]}>
+                Cantidad (acciones o fracciones)
+              </Text>
+              <View style={styles.row}>
+                <TextInput
+                  value={formatQuantityInput(quantityRaw)}
+                  onChangeText={(value) => setQuantityRaw(parseQuantityInput(value))}
+                  keyboardType="decimal-pad"
+                  placeholder="Ej. 0,25"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.input, styles.flex, { color: theme.text, borderColor: theme.border }]}
+                />
+                <Pressable
+                  onPress={() =>
+                    setQuantityRaw((prev) => (prev.includes('.') ? prev : `${prev || '0'}.`))
+                  }
+                  style={[styles.decimalBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Insertar coma decimal"
+                >
+                  <Text style={[styles.decimalBtnText, { color: theme.text }]}>,</Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.hint, { color: theme.textMuted }]}>
+                Puedes guardar una fracción, como 0,25 de SPY. Si el teclado no trae coma, tócala al lado.
+              </Text>
 
               <Text style={[styles.label, { color: theme.textMuted }]}>
                 Precio unitario ({priceCurrency || currency})
@@ -365,10 +392,14 @@ export function AccountFormScreen() {
                 </Text>
               ) : null}
             </>
+          ) : existing ? (
+            <Text style={[styles.hint, { color: theme.textMuted }]}>
+              El saldo se ajusta desde el historial de la cuenta, con el lápiz junto al importe.
+            </Text>
           ) : (
             <>
               <Text style={[styles.label, { color: theme.textMuted }]}>
-                {liabilityMode ? 'Importe (deuda)' : 'Importe (saldo)'}
+                {liabilityMode ? 'Importe inicial (deuda)' : 'Importe inicial (saldo)'}
               </Text>
               <TextInput
                 value={formatAmountInput(balanceRaw, currency)}
@@ -527,6 +558,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  decimalBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  decimalBtnText: { fontSize: 22, fontWeight: '700', lineHeight: 24 },
   valuePreview: { fontWeight: '800', fontSize: 16, marginBottom: 12 },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   iconBtn: {

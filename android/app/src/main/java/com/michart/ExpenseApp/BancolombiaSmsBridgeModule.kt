@@ -12,12 +12,26 @@ import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
 import com.facebook.react.module.annotations.ReactModule
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import org.json.JSONObject
 
 @ReactModule(name = "BancolombiaSmsBridge")
 class BancolombiaSmsBridgeModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
 
   override fun getName(): String = "BancolombiaSmsBridge"
+
+  override fun initialize() {
+    super.initialize()
+    companionContext = reactContext
+  }
+
+  override fun invalidate() {
+    if (companionContext === reactContext) {
+      companionContext = null
+    }
+    super.invalidate()
+  }
 
   @ReactMethod
   fun listRecentBySenders(params: ReadableMap?, promise: Promise) {
@@ -83,6 +97,28 @@ class BancolombiaSmsBridgeModule(private val reactContext: ReactApplicationConte
       promise.resolve(out)
     } catch (e: Exception) {
       promise.reject("SMS_READ_ERROR", e.message, e)
+    }
+  }
+
+  companion object {
+    @Volatile
+    private var companionContext: ReactApplicationContext? = null
+
+    fun emitSmsCaptured(entry: JSONObject) {
+      val ctx = companionContext ?: return
+      if (!ctx.hasActiveReactInstance()) return
+      try {
+        val map = WritableNativeMap()
+        map.putString("id", entry.optString("id"))
+        map.putString("address", entry.optString("address"))
+        map.putString("body", entry.optString("body"))
+        map.putDouble("date", entry.optLong("date", 0L).toDouble())
+        ctx
+          .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+          .emit("BankSmsCaptured", map)
+      } catch (_: Exception) {
+        // El SMS ya quedó en el buffer local.
+      }
     }
   }
 

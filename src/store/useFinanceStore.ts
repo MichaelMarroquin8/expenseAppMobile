@@ -17,6 +17,12 @@ import {
   SmsDetection,
   Transaction,
 } from '../domain/models';
+import {
+  DEFAULT_BANK_SMS_SHORT_CODES,
+  DEFAULT_ENABLED_BANK_SOURCE_IDS,
+  DEFAULT_NOTIFICATION_PACKAGES,
+  resolveBankSources,
+} from '../domain/bankSources';
 
 const KNOWN_ACCOUNT_KINDS = new Set<AccountKind>([
   'default',
@@ -50,6 +56,7 @@ const sanitizeAccount = (raw: unknown): FinanceAccount | null => {
     color: typeof item.color === 'string' && item.color ? item.color : '#2563EB',
     icon: typeof item.icon === 'string' ? item.icon : undefined,
     note: typeof item.note === 'string' ? item.note : undefined,
+    last4: typeof item.last4 === 'string' && /^\d{4}$/.test(item.last4) ? item.last4 : undefined,
     excludeFromTotal: typeof item.excludeFromTotal === 'boolean' ? item.excludeFromTotal : undefined,
     symbol: typeof item.symbol === 'string' ? item.symbol : undefined,
     quantity: typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? item.quantity : undefined,
@@ -177,6 +184,11 @@ const initialSettings: AppSettings = {
   currency: 'COP',
   colorScheme: 'system',
   remindersEnabled: true,
+  enabledBankSourceIds: [...DEFAULT_ENABLED_BANK_SOURCE_IDS],
+  bankSmsShortCodes: [...DEFAULT_BANK_SMS_SHORT_CODES],
+  notificationPackages: [...DEFAULT_NOTIFICATION_PACKAGES],
+  bridgeDebugEnabled: false,
+  backgroundSyncEnabled: false,
 };
 
 const createId = (prefix: string) => `${prefix}_${Date.now()}_${Math.round(Math.random() * 1000)}`;
@@ -400,7 +412,9 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => {
           const detections = messages.map((input) => {
             const parsed = parseSms(input);
-            const card = state.cards.find((item) => item.last4 === parsed.last4);
+            const card = parsed.accountLast4
+              ? undefined
+              : state.cards.find((item) => item.last4 === parsed.last4);
             const candidate: SmsDetection = {
               ...parsed,
               cardId: card?.id,
@@ -454,11 +468,22 @@ export const useFinanceStore = create<FinanceState>()(
           const detection = state.smsDetections.find((item) => item.id === detectionId);
           if (!detection || !detection.amount || detection.amount <= 0) return state;
 
-          const linkedCard = detection.cardId
-            ? state.cards.find((card) => card.id === detection.cardId)
+          const linkedCard = detection.accountLast4
+            ? undefined
+            : detection.cardId
+              ? state.cards.find((card) => card.id === detection.cardId)
+              : detection.last4
+                ? state.cards.find((card) => card.last4 === detection.last4)
+                : undefined;
+          const accountFromMask = detection.accountLast4
+            ? state.accounts.find((account) => account.last4 === detection.accountLast4) ??
+              state.accounts.find((account) =>
+                `${account.name} ${account.provider} ${account.note ?? ''}`.includes(detection.accountLast4 ?? ''),
+              )
             : undefined;
           const resolvedAccountId =
-            explicitAccountId ?? linkedCard?.accountId ?? state.accounts[0]?.id;
+            explicitAccountId ??
+            (detection.accountLast4 ? accountFromMask?.id : linkedCard ? linkedCard.accountId : state.accounts[0]?.id);
 
           const fromNotification = detection.channel === 'notification';
           const transaction: Transaction = {
@@ -467,9 +492,12 @@ export const useFinanceStore = create<FinanceState>()(
             amount: detection.amount,
             currency: state.settings.currency,
             category: detection.categoryGuess ?? 'Otros',
-            tags: fromNotification ? ['wallet', 'notification'] : ['sms'],
-            paymentMethod: detection.cardId ? 'card' : 'transfer',
-            cardId: detection.cardId,
+            tags: [
+              ...(fromNotification ? ['wallet', 'notification'] : ['sms']),
+              ...(detection.accountLast4 ? ['transferencia'] : []),
+            ],
+            paymentMethod: linkedCard ? 'card' : 'transfer',
+            cardId: linkedCard?.id,
             accountId: resolvedAccountId,
             merchant: detection.merchant ?? 'Comercio detectado',
             occurredAt: detection.occurredAt ?? new Date().toISOString(),
@@ -492,8 +520,17 @@ export const useFinanceStore = create<FinanceState>()(
             item.id === detectionId ? { ...item, status: 'discarded' } : item,
           ),
         })),
-      updateSettings: (settings) =>
-        set((state) => ({ settings: { ...state.settings, ...settings } })),
+      updateSettings: (partial) =>
+        set((state) => {
+          const next = { ...state.settings, ...partial };
+          if (partial.enabledBankSourceIds) {
+            const resolved = resolveBankSources(partial.enabledBankSourceIds);
+            next.enabledBankSourceIds = resolved.enabledIds;
+            if (!partial.bankSmsShortCodes) next.bankSmsShortCodes = resolved.shortCodes;
+            if (!partial.notificationPackages) next.notificationPackages = resolved.packages;
+          }
+          return { settings: next };
+        }),
     }),
     {
       // v2: arranque sin datos demo (v1 traía semillas USD/cuentas/tarjetas).
@@ -502,6 +539,12 @@ export const useFinanceStore = create<FinanceState>()(
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<FinanceState>;
         const persistedSettings = (persisted.settings ?? {}) as Partial<AppSettings>;
+        const enabledIds = Array.isArray(persistedSettings.enabledBankSourceIds)
+          ? persistedSettings.enabledBankSourceIds.filter((id) => typeof id === 'string')
+          : currentState.settings.enabledBankSourceIds;
+        const resolved = resolveBankSources(
+          enabledIds.length > 0 ? enabledIds : DEFAULT_ENABLED_BANK_SOURCE_IDS,
+        );
         const safeSettings: AppSettings = {
           currency:
             typeof persistedSettings.currency === 'string'
@@ -516,6 +559,29 @@ export const useFinanceStore = create<FinanceState>()(
           remindersEnabled: coerceBoolean(
             persistedSettings.remindersEnabled,
             currentState.settings.remindersEnabled,
+          ),
+          enabledBankSourceIds: resolved.enabledIds,
+          bankSmsShortCodes:
+            Array.isArray(persistedSettings.bankSmsShortCodes) &&
+            persistedSettings.bankSmsShortCodes.length > 0
+              ? persistedSettings.bankSmsShortCodes.filter((c) => typeof c === 'string')
+              : resolved.shortCodes.length > 0
+                ? resolved.shortCodes
+                : [...DEFAULT_BANK_SMS_SHORT_CODES],
+          notificationPackages:
+            Array.isArray(persistedSettings.notificationPackages) &&
+            persistedSettings.notificationPackages.length > 0
+              ? persistedSettings.notificationPackages.filter((p) => typeof p === 'string')
+              : resolved.packages.length > 0
+                ? resolved.packages
+                : [...DEFAULT_NOTIFICATION_PACKAGES],
+          bridgeDebugEnabled: coerceBoolean(
+            persistedSettings.bridgeDebugEnabled,
+            currentState.settings.bridgeDebugEnabled,
+          ),
+          backgroundSyncEnabled: coerceBoolean(
+            persistedSettings.backgroundSyncEnabled,
+            currentState.settings.backgroundSyncEnabled,
           ),
         };
 

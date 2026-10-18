@@ -1,3 +1,4 @@
+import { DEFAULT_BANK_SMS_SHORT_CODES } from './bankSources';
 import { SmsDetection, Transaction } from './models';
 
 const CATEGORY_RULES: Array<{ category: string; patterns: RegExp[] }> = [
@@ -7,9 +8,25 @@ const CATEGORY_RULES: Array<{ category: string; patterns: RegExp[] }> = [
   { category: 'Entretenimiento', patterns: [/netflix/i, /spotify/i, /cine/i, /steam/i] },
 ];
 
-const BANK_PATTERNS = [/bbva/i, /banamex/i, /banco ?azteca/i, /santander/i, /nu/i, /bancolombia/i];
-const BANCOLOMBIA_SHORT_CODES = new Set(['85540', '85784']);
+const BANK_PATTERNS = [/bbva/i, /banamex/i, /banco ?azteca/i, /santander/i, /nu/i, /bancolombia/i, /nequi/i, /daviplata/i];
+/** @deprecated Prefer DEFAULT_BANK_SMS_SHORT_CODES from bankSources */
+export const BANCOLOMBIA_SHORT_CODES = ['85540', '85784'] as const;
+const TRUSTED_SHORT_CODE_SET = new Set(
+  DEFAULT_BANK_SMS_SHORT_CODES.map((c) => c.replace(/[^\w]/g, '').toUpperCase()),
+);
 const BANCOLOMBIA_EMAIL_PATTERN = /@an\.notificacionesbancolombia\.com/i;
+
+const resolveBankLabel = (sender?: string, senderCode?: string, rawMessage?: string): string | undefined => {
+  if (BANCOLOMBIA_EMAIL_PATTERN.test(sender ?? '') || ['85540', '85784'].includes(senderCode ?? '')) {
+    return 'bancolombia';
+  }
+  if (senderCode === 'NU' || senderCode === 'NUCO') return 'nu';
+  if (senderCode?.includes('NEQUI') || senderCode === '4455637') return 'nequi';
+  if (senderCode?.includes('BBVA')) return 'bbva';
+  if (senderCode?.includes('DAVIPLATA')) return 'daviplata';
+  if (TRUSTED_SHORT_CODE_SET.has(senderCode ?? '')) return 'bank';
+  return BANK_PATTERNS.find((pattern) => pattern.test(rawMessage ?? ''))?.source?.replace(/\\\?/g, '');
+};
 
 const hashMessage = (value: string): string => {
   let hash = 0;
@@ -33,7 +50,7 @@ const getSenderCode = (sender?: string): string | undefined =>
 const isTrustedSender = (sender?: string): boolean => {
   const normalized = getSenderCode(sender);
   if (!normalized) return false;
-  if (BANCOLOMBIA_SHORT_CODES.has(normalized)) return true;
+  if (TRUSTED_SHORT_CODE_SET.has(normalized)) return true;
   if (BANCOLOMBIA_EMAIL_PATTERN.test(sender ?? '')) return true;
   return false;
 };
@@ -85,9 +102,12 @@ const parseDateTime = (raw?: string): string | undefined => {
 };
 
 export interface SmsRawInput {
+  id?: string;
   sender?: string;
   message: string;
   channel?: 'sms' | 'email';
+  /** Epoch ms del SMS nativo (inbox o receiver). */
+  receivedAt?: number;
 }
 
 const extractRelevantText = (input: SmsRawInput): string => {
@@ -97,6 +117,35 @@ const extractRelevantText = (input: SmsRawInput): string => {
     /(Bancolombia:\s*(?:Pagaste|Retiraste|Compraste|Transferiste|Recibiste)[^.?!]*[.?!])/i,
   );
   return movementSentence?.[1] ?? flattened;
+};
+
+const parseAccountOutgoing = (
+  rawMessage: string,
+): { amount?: number; accountLast4: string; merchant: string; occurredAt?: string } | null => {
+  const match = rawMessage.match(
+    /(?:pagaste|transferiste|enviaste)\s+\$?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?)[\s\S]{0,140}?desde\s+tu\s+cuenta\s+\*?(\d{4})/i,
+  );
+  if (!match) return null;
+  const isTransfer = /c[oó]digo\s+qr|a\s+la\s+llave|transferiste|enviaste|transferencia/i.test(rawMessage);
+  if (!isTransfer) return null;
+
+  const llave = rawMessage.match(/a\s+la\s+llave\s+(\d{5,})/i)?.[1];
+  const isQr = /c[oó]digo\s+qr/i.test(rawMessage);
+  const merchant = (
+    isQr
+      ? `Código QR${llave ? ` · llave ${llave}` : ''}`
+      : llave
+        ? `Transferencia · llave ${llave}`
+        : 'Transferencia'
+  ).slice(0, 60);
+  const dateMatch = rawMessage.match(/(\d{2}[-/]\d{2}[-/]\d{4}(?:\s+a\s+las\s+\d{2}:\d{2}(?::\d{2})?)?)/i);
+
+  return {
+    amount: parseAmountValue(match[1]),
+    accountLast4: match[2],
+    merchant,
+    occurredAt: parseDateTime(dateMatch?.[1]),
+  };
 };
 
 export const parseSms = (input: SmsRawInput): Omit<SmsDetection, 'status' | 'duplicate' | 'cardId'> => {
@@ -116,20 +165,44 @@ export const parseSms = (input: SmsRawInput): Omit<SmsDetection, 'status' | 'dup
   const dateMatch = rawMessage.match(
     /(\d{4}[-/]\d{2}[-/]\d{2}(?:\s(?:a\s+las\s+)?\d{2}:\d{2}(?::\d{2})?)?|\d{2}[-/]\d{2}[-/]\d{4}(?:\s(?:a\s+las\s+)?\d{2}:\d{2}(?::\d{2})?)?)/i,
   );
-  const bankMatch = BANCOLOMBIA_SHORT_CODES.has(senderCode ?? '') || BANCOLOMBIA_EMAIL_PATTERN.test(sender ?? '')
-    ? 'bancolombia'
-    : BANK_PATTERNS.find((pattern) => pattern.test(rawMessage))?.source;
+  const bankMatch = resolveBankLabel(sender, senderCode, rawMessage);
+  const outgoing = parseAccountOutgoing(rawMessage);
+
+  if (outgoing) {
+    const occurredAt =
+      outgoing.occurredAt ??
+      (typeof input.receivedAt === 'number' && input.receivedAt > 0
+        ? new Date(input.receivedAt).toISOString()
+        : undefined);
+    return {
+      id: input.id?.trim() || hashMessage(`${channel}::${sender ?? 'unknown'}::${rawMessage}`),
+      sender,
+      channel,
+      trustedSource: isTrustedSender(sender),
+      rawMessage,
+      bank: bankMatch,
+      amount: outgoing.amount,
+      merchant: outgoing.merchant,
+      occurredAt,
+      accountLast4: outgoing.accountLast4,
+      categoryGuess: 'Otros',
+    };
+  }
 
   const normalizedAmount = parseAmountValue(amountMatch?.[1]);
-  const occurredAt = parseDateTime(dateMatch?.[1]);
+  const occurredAt =
+    parseDateTime(dateMatch?.[1]) ??
+    (typeof input.receivedAt === 'number' && input.receivedAt > 0
+      ? new Date(input.receivedAt).toISOString()
+      : undefined);
 
   return {
-    id: hashMessage(`${channel}::${sender ?? 'unknown'}::${rawMessage}`),
+    id: input.id?.trim() || hashMessage(`${channel}::${sender ?? 'unknown'}::${rawMessage}`),
     sender,
     channel,
     trustedSource: isTrustedSender(sender),
     rawMessage,
-    bank: bankMatch?.replace(/\\\?/g, ''),
+    bank: bankMatch,
     amount: normalizedAmount,
     merchant: merchantMatch?.[1]?.trim() ?? 'Comercio detectado',
     occurredAt,

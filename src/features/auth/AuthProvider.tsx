@@ -163,11 +163,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isConfigured: isFirebaseConfigured,
       signInEmail: async (email, password) => {
-        if (!firebaseAuth) return;
+        if (!firebaseAuth) throw new Error('auth/not-configured');
         await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
       },
       signUpEmail: async (email, password) => {
-        if (!firebaseAuth) return;
+        if (!firebaseAuth) throw new Error('auth/not-configured');
         await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
       },
       signOutCurrent: async () => {

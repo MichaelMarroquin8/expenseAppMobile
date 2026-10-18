@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -28,6 +29,7 @@ import {
   getCurrencyFractionDigits,
   parseAmountInput,
 } from '../../core/utils/format';
+import { accountSupportsMovement, type AccountMovementRole } from '../../domain/accounts';
 import { Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
@@ -35,8 +37,10 @@ import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
 interface QuickAddTransactionModalProps {
   open: boolean;
   onClose: () => void;
-  initialType?: 'income' | 'expense';
+  initialType?: 'income' | 'expense' | 'transfer';
   editingTransaction?: Transaction | null;
+  presetAccountId?: string;
+  presetDestinationAccountId?: string;
 }
 
 const formatDateLabel = (date: Date) =>
@@ -81,6 +85,11 @@ const buildCalendarDays = (baseMonth: Date): Date[] => {
   });
 };
 
+const PROTECTED_CATEGORIES = ['Otros', 'Salario', 'Otros ingresos'];
+
+const sourceRoleFor = (movement: 'income' | 'expense' | 'transfer'): AccountMovementRole =>
+  movement === 'income' ? 'income_destination' : movement === 'transfer' ? 'transfer_source' : 'expense_source';
+
 const CATEGORY_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   Comida: 'fast-food-outline',
   Transporte: 'car-outline',
@@ -101,6 +110,8 @@ export function QuickAddTransactionModal({
   onClose,
   initialType = 'expense',
   editingTransaction = null,
+  presetAccountId,
+  presetDestinationAccountId,
 }: QuickAddTransactionModalProps) {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -109,10 +120,13 @@ export function QuickAddTransactionModal({
   const incomeCategories = useFinanceStore((state) => state.incomeCategories);
   const categoryIcons = useFinanceStore((state) => state.categoryIcons);
   const accounts = useFinanceStore((state) => state.accounts);
+  const cards = useFinanceStore((state) => state.cards);
   const addTransactionCategory = useFinanceStore((state) => state.addTransactionCategory);
+  const removeTransactionCategory = useFinanceStore((state) => state.removeTransactionCategory);
   const addTransaction = useFinanceStore((state) => state.addTransaction);
   const updateTransaction = useFinanceStore((state) => state.updateTransaction);
   const amountInputRef = useRef<TextInput>(null);
+  const ignoreNextCategoryPress = useRef(false);
 
   const [step, setStep] = useState<'category' | 'amount'>('category');
   const [categoryPicked, setCategoryPicked] = useState(false);
@@ -122,6 +136,7 @@ export function QuickAddTransactionModal({
   const [category, setCategory] = useState('Comida');
   const [accountId, setAccountId] = useState<string | undefined>(undefined);
   const [destinationAccountId, setDestinationAccountId] = useState<string | undefined>(undefined);
+  const [cardId, setCardId] = useState<string | undefined>(undefined);
   const [newCategory, setNewCategory] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [occurredAtInput, setOccurredAtInput] = useState(toLocalDateInput(new Date()));
@@ -145,10 +160,20 @@ export function QuickAddTransactionModal({
       setMerchant(editingTransaction.merchant);
       setNewCategory('');
       setCategory(editingTransaction.category);
-      setAccountId(editingTransaction.accountId ?? accounts[0]?.id);
-      setDestinationAccountId(
-        editingTransaction.destinationAccountId ?? accounts[1]?.id ?? accounts[0]?.id,
+      setAccountId(
+        editingTransaction.accountId ??
+          accounts.find((account) => accountSupportsMovement(account.kind, sourceRoleFor(editingTransaction.type)))
+            ?.id,
       );
+      setDestinationAccountId(
+        editingTransaction.destinationAccountId ??
+          accounts.find(
+            (account) =>
+              account.id !== editingTransaction.accountId &&
+              accountSupportsMovement(account.kind, 'transfer_destination'),
+          )?.id,
+      );
+      setCardId(editingTransaction.cardId);
       setOccurredAtInput(toLocalDateInput(validDate));
       setCalendarMonth(new Date(validDate.getFullYear(), validDate.getMonth(), 1));
       setShowCalendar(false);
@@ -158,22 +183,44 @@ export function QuickAddTransactionModal({
       return;
     }
 
-    const startType: 'income' | 'expense' = initialType;
+    const startType = initialType;
+    const role = sourceRoleFor(startType);
+    const presetSource =
+      presetAccountId && accounts.some((account) => account.id === presetAccountId && accountSupportsMovement(account.kind, role))
+        ? presetAccountId
+        : undefined;
+    const initialSourceId =
+      presetSource ?? accounts.find((account) => accountSupportsMovement(account.kind, role))?.id;
+    const presetDestination =
+      presetDestinationAccountId &&
+      presetDestinationAccountId !== initialSourceId &&
+      accounts.some(
+        (account) =>
+          account.id === presetDestinationAccountId && accountSupportsMovement(account.kind, 'transfer_destination'),
+      )
+        ? presetDestinationAccountId
+        : undefined;
     setType(startType);
     setAmountRaw('');
     setMerchant('');
     setNewCategory('');
     setCategory(startType === 'income' ? 'Salario' : 'Comida');
-    setAccountId(accounts[0]?.id);
-    setDestinationAccountId(accounts[1]?.id ?? accounts[0]?.id);
+    setAccountId(initialSourceId);
+    setCardId(undefined);
+    setDestinationAccountId(
+      presetDestination ??
+        accounts.find(
+          (account) => account.id !== initialSourceId && accountSupportsMovement(account.kind, 'transfer_destination'),
+        )?.id,
+    );
     setOccurredAtInput(toLocalDateInput(new Date()));
     setCalendarMonth(new Date());
     setShowCalendar(false);
     setEntryCurrency(defaultCurrency);
     setCurrencyPickerOpen(false);
-    setStep('category');
-    setCategoryPicked(false);
-  }, [open, initialType, accounts, editingTransaction, defaultCurrency]);
+    setStep(startType === 'transfer' ? 'amount' : 'category');
+    setCategoryPicked(startType === 'transfer');
+  }, [open, initialType, accounts, editingTransaction, defaultCurrency, presetAccountId, presetDestinationAccountId]);
 
   useEffect(() => {
     if (!open || entryCurrency === defaultCurrency) {
@@ -216,6 +263,77 @@ export function QuickAddTransactionModal({
       useNativeDriver: false,
     }).start();
   }, [keyboardVisible, keypadAnim]);
+
+  const sourceRole = sourceRoleFor(type);
+  const sourceAccounts = useMemo(() => {
+    const eligible = accounts.filter((account) => accountSupportsMovement(account.kind, sourceRole));
+    const savedId = editingTransaction?.type === type ? editingTransaction.accountId : undefined;
+    if (!savedId || eligible.some((account) => account.id === savedId)) return eligible;
+    const saved = accounts.find((account) => account.id === savedId);
+    return saved ? [saved, ...eligible] : eligible;
+  }, [accounts, editingTransaction, sourceRole, type]);
+  const destinationAccounts = useMemo(() => {
+    const eligible = accounts.filter(
+      (account) => account.id !== accountId && accountSupportsMovement(account.kind, 'transfer_destination'),
+    );
+    const savedId = editingTransaction?.type === 'transfer' ? editingTransaction.destinationAccountId : undefined;
+    if (!savedId || savedId === accountId || eligible.some((account) => account.id === savedId)) return eligible;
+    const saved = accounts.find((account) => account.id === savedId);
+    return saved ? [saved, ...eligible] : eligible;
+  }, [accountId, accounts, editingTransaction]);
+
+  useEffect(() => {
+    if (!open) return;
+    const savedId = editingTransaction?.type === type ? editingTransaction.accountId : undefined;
+    if (accountId && (accountId === savedId || sourceAccounts.some((account) => account.id === accountId))) return;
+    const presetOk = !!presetAccountId && sourceAccounts.some((account) => account.id === presetAccountId);
+    setAccountId(presetOk ? presetAccountId : sourceAccounts[0]?.id);
+  }, [accountId, editingTransaction, open, presetAccountId, sourceAccounts, type]);
+
+  useEffect(() => {
+    if (!open || type !== 'transfer') return;
+    const presetDestinationOk =
+      !!presetDestinationAccountId &&
+      presetDestinationAccountId !== accountId &&
+      destinationAccounts.some((account) => account.id === presetDestinationAccountId);
+    if (presetDestinationOk) {
+      if (destinationAccountId !== presetDestinationAccountId) setDestinationAccountId(presetDestinationAccountId);
+      return;
+    }
+    const savedId = editingTransaction?.type === 'transfer' ? editingTransaction.destinationAccountId : undefined;
+    if (
+      destinationAccountId &&
+      destinationAccountId !== accountId &&
+      (destinationAccountId === savedId || destinationAccounts.some((account) => account.id === destinationAccountId))
+    ) {
+      return;
+    }
+    setDestinationAccountId(destinationAccounts[0]?.id);
+  }, [
+    accountId,
+    destinationAccountId,
+    destinationAccounts,
+    editingTransaction,
+    open,
+    presetDestinationAccountId,
+    type,
+  ]);
+
+  const accountCards = useMemo(
+    () => (type === 'expense' ? cards.filter((card) => card.accountId === accountId) : []),
+    [accountId, cards, type],
+  );
+
+  useEffect(() => {
+    if (!open || type !== 'expense') return;
+    if (cardId && accountCards.some((card) => card.id === cardId)) return;
+    const savedId = editingTransaction?.cardId;
+    if (savedId && accountCards.some((card) => card.id === savedId)) {
+      setCardId(savedId);
+      return;
+    }
+    setCardId(accountCards[0]?.id);
+  }, [accountCards, cardId, editingTransaction, open, type]);
 
   const activeCategories = type === 'income' ? incomeCategories : expenseCategories;
   const sortedCategories = useMemo(
@@ -260,7 +378,11 @@ export function QuickAddTransactionModal({
       merchant.trim() || (type === 'transfer' ? 'Transferencia' : type === 'income' ? 'Ingreso' : category);
     if (Number.isNaN(entryAmount) || entryAmount <= 0) return;
     if (type === 'transfer' && (!accountId || !destinationAccountId || accountId === destinationAccountId)) return;
-    if (type !== 'transfer' && accounts.length > 0 && !accountId) return;
+    if (type === 'transfer' && !sourceAccounts.some((account) => account.id === accountId)) return;
+    if (type === 'transfer' && !destinationAccounts.some((account) => account.id === destinationAccountId)) return;
+    if (type !== 'transfer' && sourceAccounts.length > 0 && !sourceAccounts.some((account) => account.id === accountId)) {
+      return;
+    }
     const persisted = resolvePersistedAmount(entryAmount);
     if (!persisted) return;
     const selectedDate = parseLocalDateInput(occurredAtInput) ?? new Date();
@@ -288,6 +410,8 @@ export function QuickAddTransactionModal({
         merchant: normalizedMerchant,
         accountId,
         destinationAccountId: type === 'transfer' ? destinationAccountId : undefined,
+        cardId: type === 'expense' ? cardId : undefined,
+        paymentMethod: type === 'expense' && cardId ? 'card' : 'transfer',
         occurredAt,
       });
       close();
@@ -303,9 +427,10 @@ export function QuickAddTransactionModal({
       exchangeRate: persisted.exchangeRate,
       category: type === 'transfer' ? 'Transferencia' : category,
       tags: [],
-      paymentMethod: 'transfer',
+      paymentMethod: type === 'expense' && cardId ? 'card' : 'transfer',
       merchant: normalizedMerchant,
       accountId,
+      cardId: type === 'expense' ? cardId : undefined,
       destinationAccountId: type === 'transfer' ? destinationAccountId : undefined,
       occurredAt,
       recurring: false,
@@ -341,9 +466,52 @@ export function QuickAddTransactionModal({
   };
 
   const chooseCategory = (item: string) => {
+    if (ignoreNextCategoryPress.current) {
+      ignoreNextCategoryPress.current = false;
+      return;
+    }
     setCategory(item);
     setCategoryPicked(true);
     setStep('amount');
+  };
+
+  const holdCategory = (item: string) => {
+    ignoreNextCategoryPress.current = true;
+    setCategory(item);
+    setCategoryPicked(true);
+    setTimeout(() => {
+      ignoreNextCategoryPress.current = false;
+    }, 450);
+  };
+
+  const canDeleteSelected =
+    categoryPicked &&
+    type !== 'transfer' &&
+    activeCategories.includes(category) &&
+    !PROTECTED_CATEGORIES.includes(category);
+
+  const confirmDeleteSelected = () => {
+    if (!canDeleteSelected) return;
+    const target = category;
+    const kind = type === 'income' ? 'income' : 'expense';
+    Alert.alert(
+      'Eliminar categoría',
+      `¿Eliminar “${target}”? Los movimientos que ya la usan conservan el nombre.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            removeTransactionCategory(target, kind);
+            const remaining = activeCategories.filter((item) => item !== target);
+            const fallback = kind === 'income' ? 'Salario' : 'Comida';
+            setCategory(remaining.includes(fallback) ? fallback : (remaining[0] ?? fallback));
+            setCategoryPicked(false);
+          },
+        },
+      ],
+    );
   };
 
   const iconFor = (item: string): keyof typeof Ionicons.glyphMap =>
@@ -387,6 +555,10 @@ export function QuickAddTransactionModal({
     setOccurredAtInput(toLocalDateInput(base));
   };
   const selectedDate = parseLocalDateInput(occurredAtInput) ?? new Date();
+  const todayInput = toLocalDateInput(new Date());
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayInput = toLocalDateInput(yesterdayDate);
   const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
   const calendarWeeks = useMemo(() => {
     const weeks: Date[][] = [];
@@ -419,13 +591,21 @@ export function QuickAddTransactionModal({
 
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onHeaderLeft}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
-      >
-        <Pressable style={styles.backdropPressable} onPress={close} />
+      <View style={styles.modalOverlay}>
+        <Pressable
+          style={styles.backdropPressable}
+          onPress={close}
+          accessibilityRole="button"
+          accessibilityLabel="Cerrar"
+        />
+        <KeyboardAvoidingView
+          pointerEvents="box-none"
+          style={styles.keyboardWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
+        >
         <View
+          onStartShouldSetResponder={() => true}
           style={[
             styles.modalCard,
             step === 'category' ? styles.modalCardCategory : styles.modalCardAmount,
@@ -455,6 +635,14 @@ export function QuickAddTransactionModal({
                   <Text style={[styles.headerAction, { color: theme.primary }]}>Guardar</Text>
                 </Pressable>
               </View>
+            ) : canDeleteSelected ? (
+              <Pressable
+                android_ripple={null}
+                onPress={confirmDeleteSelected}
+                style={[styles.headerSide, styles.headerSideRight]}
+              >
+                <Text style={[styles.headerAction, { color: theme.danger }]}>Eliminar</Text>
+              </Pressable>
             ) : (
               <View style={styles.headerSide} />
             )}
@@ -470,19 +658,36 @@ export function QuickAddTransactionModal({
               {typeSegment}
               <Text style={[styles.stepTitle, { color: theme.text }]}>{categoryPrompt}</Text>
               <Text style={[styles.stepHint, { color: theme.textMuted }]}>
-                Toca una categoría para seguir con el monto.
+                Toca una categoría para seguir con el monto. Mantén pulsada si quieres eliminarla.
               </Text>
+              {canDeleteSelected ? (
+                <Pressable
+                  onPress={confirmDeleteSelected}
+                  style={[
+                    styles.deleteCategoryBar,
+                    { borderColor: theme.danger, backgroundColor: `${theme.danger}14` },
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={16} color={theme.danger} />
+                  <Text style={[styles.deleteCategoryLabel, { color: theme.danger }]}>
+                    Eliminar {category}
+                  </Text>
+                </Pressable>
+              ) : null}
               <View style={styles.categoryGrid}>
                 {sortedCategories.map((item) => {
                   const selected = categoryPicked && item === category;
                   return (
-                    <Pressable key={item} style={styles.categoryCell} onPress={() => chooseCategory(item)}>
-                      <View
+                    <View key={item} style={styles.categoryCell}>
+                      <Pressable
                         style={[
                           styles.categoryTile,
                           { borderColor: theme.border, backgroundColor: theme.card },
                           selected && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
                         ]}
+                        onPress={() => chooseCategory(item)}
+                        onLongPress={() => holdCategory(item)}
+                        delayLongPress={280}
                       >
                         <View
                           style={[
@@ -499,8 +704,17 @@ export function QuickAddTransactionModal({
                         <Text style={[styles.categoryLabel, { color: theme.text }]} numberOfLines={2}>
                           {item}
                         </Text>
-                      </View>
-                    </Pressable>
+                      </Pressable>
+                      {selected && !PROTECTED_CATEGORIES.includes(item) ? (
+                        <Pressable
+                          onPress={confirmDeleteSelected}
+                          hitSlop={6}
+                          style={[styles.deleteBadge, { backgroundColor: theme.danger }]}
+                        >
+                          <Ionicons name="trash-outline" size={14} color="#fff" />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   );
                 })}
               </View>
@@ -526,62 +740,61 @@ export function QuickAddTransactionModal({
               contentContainerStyle={styles.scrollContent}
             >
               {typeSegment}
-              {type !== 'transfer' ? (
-                <Pressable
-                  onPress={() => setStep('category')}
-                  style={[styles.categoryBanner, { borderColor: theme.border, backgroundColor: `${theme.primary}14` }]}
-                >
-                  <View style={[styles.categoryIconWrap, styles.categoryIconWrapCompact, { backgroundColor: `${theme.primary}22` }]}>
-                    <Ionicons name={iconFor(category)} size={18} color={theme.primary} />
-                  </View>
-                  <View style={styles.categoryBannerText}>
-                    <Text style={[styles.categoryBannerLabel, { color: theme.text }]}>{category}</Text>
-                    <Text style={[styles.bannerHint, { color: theme.textMuted }]}>Toca para cambiar la categoría</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-                </Pressable>
-              ) : null}
-
-              <View style={styles.amountBlock}>
-                {convertedPreview != null ? (
-                  <View style={[styles.conversionChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Text style={[styles.conversionText, { color: theme.textMuted }]}>
-                      {formatMoney(convertedPreview, defaultCurrency)}
-                    </Text>
-                  </View>
-                ) : entryCurrency !== defaultCurrency && !rates ? (
-                  <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
-                    Cargando conversión…
-                  </Text>
-                ) : null}
-                <View style={[styles.amountRow, { borderColor: theme.border }]}>
+              <View style={styles.heroRow}>
+                {type !== 'transfer' ? (
                   <Pressable
-                    android_ripple={null}
-                    onPress={() => setCurrencyPickerOpen(true)}
-                    style={[styles.currencyBadge, { backgroundColor: `${theme.primary}22` }]}
+                    onPress={() => setStep('category')}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Categoría ${category}. Toca para cambiarla`}
+                    style={[styles.categoryBox, { borderColor: theme.border, backgroundColor: `${theme.primary}14` }]}
                   >
-                    <Text style={[styles.currencyBadgeText, { color: theme.primary }]}>
-                      {entryCurrency}
+                    <View style={[styles.categoryBoxIcon, { backgroundColor: `${theme.primary}22` }]}>
+                      <Ionicons name={iconFor(category)} size={20} color={theme.primary} />
+                    </View>
+                    <Text style={[styles.categoryBoxLabel, { color: theme.text }]} numberOfLines={2}>
+                      {category}
                     </Text>
                   </Pressable>
-                  <Pressable style={styles.amountInputHit} onPress={() => Keyboard.dismiss()}>
-                    <TextInput
-                      ref={amountInputRef}
-                      value={formatAmountInput(amountRaw, entryCurrency)}
-                      onChangeText={(val) => setAmountRaw(parseAmountInput(val, entryCurrency))}
-                      onFocus={() => Keyboard.dismiss()}
-                      placeholder="0"
-                      placeholderTextColor={theme.textMuted}
-                      style={[styles.amountInput, { color: theme.text }]}
-                      showSoftInputOnFocus={false}
-                    />
-                  </Pressable>
-                </View>
-                {entryCurrencyMeta && entryCurrency !== defaultCurrency ? (
-                  <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
-                    Se guardará convertido a {defaultCurrency}
-                  </Text>
                 ) : null}
+
+                <View style={[styles.amountCard, { borderColor: theme.border, backgroundColor: theme.card }]}>
+                  <View style={styles.amountRow}>
+                    <Pressable
+                      android_ripple={null}
+                      onPress={() => setCurrencyPickerOpen(true)}
+                      style={[styles.currencyBadge, { backgroundColor: `${theme.primary}22` }]}
+                    >
+                      <Text style={[styles.currencyBadgeText, { color: theme.primary }]}>
+                        {entryCurrency}
+                      </Text>
+                    </Pressable>
+                    <Pressable style={styles.amountInputHit} onPress={() => Keyboard.dismiss()}>
+                      <TextInput
+                        ref={amountInputRef}
+                        value={formatAmountInput(amountRaw, entryCurrency)}
+                        onChangeText={(val) => setAmountRaw(parseAmountInput(val, entryCurrency))}
+                        onFocus={() => Keyboard.dismiss()}
+                        placeholder="0"
+                        placeholderTextColor={theme.textMuted}
+                        style={[styles.amountInput, { color: theme.text }]}
+                        showSoftInputOnFocus={false}
+                      />
+                    </Pressable>
+                  </View>
+                  {convertedPreview != null ? (
+                    <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
+                      ≈ {formatMoney(convertedPreview, defaultCurrency)}
+                    </Text>
+                  ) : entryCurrency !== defaultCurrency && !rates ? (
+                    <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
+                      Cargando conversión…
+                    </Text>
+                  ) : entryCurrencyMeta && entryCurrency !== defaultCurrency ? (
+                    <Text style={[styles.conversionHint, { color: theme.textMuted }]}>
+                      Se guardará en {defaultCurrency}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
               <TextInput
                 value={merchant}
@@ -590,46 +803,32 @@ export function QuickAddTransactionModal({
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
-              <Text style={[styles.blockTitle, { color: theme.text }]}>Fecha del movimiento</Text>
-              <View style={styles.dateQuickRow}>
-                <Pressable
-                  style={[styles.dateChip, { borderColor: theme.border }]}
-                  onPress={() => applyPresetDay(0)}
-                >
-                  <Text style={[styles.dateChipText, { color: theme.text }]}>Hoy</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.dateChip, { borderColor: theme.border }]}
-                  onPress={() => applyPresetDay(-1)}
-                >
-                  <Text style={[styles.dateChipText, { color: theme.text }]}>Ayer</Text>
-                </Pressable>
-              </View>
-              <View style={styles.datePickerRow}>
-                <Pressable
-                  style={[styles.datePickerButton, { borderColor: theme.border }]}
-                  onPress={() => {
-                    setCalendarMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-                    setShowCalendar(true);
-                  }}
-                >
-                  <Ionicons name="calendar-outline" size={16} color={theme.textMuted} />
-                  <Text style={[styles.dateInput, { color: theme.text }]}>{formatDateLabel(selectedDate)}</Text>
-                </Pressable>
-              </View>
 
               <Text style={[styles.blockTitle, { color: theme.text }]}>
                 {type === 'expense' ? 'Sale de' : type === 'income' ? 'Entra a' : 'Cuenta origen'}
               </Text>
-              {accounts.length === 0 ? (
+              <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
+                {type === 'expense'
+                  ? 'Efectivo, banco, débito, billetera y tarjetas de crédito.'
+                  : type === 'income'
+                    ? 'Solo cuentas donde puede entrar plata.'
+                    : 'De dónde sale. Una deuda no puede ser el origen.'}
+              </Text>
+              {sourceAccounts.length === 0 ? (
                 <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
-                  {type === 'transfer'
-                    ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
-                    : 'Sin cuentas registradas (se guardará como movimiento general).'}
+                  {accounts.length === 0
+                    ? type === 'transfer'
+                      ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
+                      : 'Sin cuentas registradas (se guardará como movimiento general).'
+                    : type === 'expense'
+                      ? 'Ninguna cuenta puede pagar este gasto. Inversiones y deudas no salen aquí.'
+                      : type === 'income'
+                        ? 'Ninguna cuenta puede recibir este ingreso.'
+                        : 'No hay una cuenta de origen válida.'}
                 </Text>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-                  {accounts.map((account) => (
+                  {sourceAccounts.map((account) => (
                     <Pressable
                       key={account.id}
                       style={[
@@ -645,29 +844,117 @@ export function QuickAddTransactionModal({
                 </ScrollView>
               )}
 
-              {type === 'transfer' ? (
+              {type === 'expense' && accountCards.length > 0 ? (
                 <>
-                  <Text style={[styles.blockTitle, { color: theme.text }]}>Cuenta destino</Text>
+                  <Text style={[styles.blockTitle, { color: theme.text }]}>Tarjeta</Text>
+                  <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
+                    La compra queda en esta tarjeta. El saldo se mueve en la cuenta elegida.
+                  </Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-                    {accounts.map((account) => (
+                    {accountCards.map((card) => (
                       <Pressable
-                        key={account.id}
+                        key={card.id}
                         style={[
                           styles.chip,
                           { borderColor: theme.border },
-                          destinationAccountId === account.id && {
-                            borderColor: theme.primary,
-                            backgroundColor: `${theme.primary}20`,
-                          },
+                          cardId === card.id && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
                         ]}
-                        onPress={() => setDestinationAccountId(account.id)}
+                        onPress={() => setCardId(card.id)}
                       >
-                        <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
+                        <Text style={[styles.chipLabel, { color: theme.text }]}>
+                          {card.alias} · {card.last4}
+                        </Text>
                       </Pressable>
                     ))}
                   </ScrollView>
                 </>
               ) : null}
+
+              {type === 'transfer' ? (
+                <>
+                  <Text style={[styles.blockTitle, { color: theme.text }]}>Cuenta destino</Text>
+                  <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
+                    A dónde llega: otra cuenta, una tarjeta, una inversión o una deuda.
+                  </Text>
+                  {destinationAccounts.length === 0 ? (
+                    <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
+                      Agrega otra cuenta para elegir el destino.
+                    </Text>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                      {destinationAccounts.map((account) => (
+                        <Pressable
+                          key={account.id}
+                          style={[
+                            styles.chip,
+                            { borderColor: theme.border },
+                            destinationAccountId === account.id && {
+                              borderColor: theme.primary,
+                              backgroundColor: `${theme.primary}20`,
+                            },
+                          ]}
+                          onPress={() => setDestinationAccountId(account.id)}
+                        >
+                          <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  )}
+                </>
+              ) : null}
+
+              <View style={styles.dateCompactRow}>
+                <Pressable
+                  style={[
+                    styles.dateChip,
+                    { borderColor: theme.border },
+                    occurredAtInput === todayInput && {
+                      borderColor: theme.primary,
+                      backgroundColor: `${theme.primary}20`,
+                    },
+                  ]}
+                  onPress={() => applyPresetDay(0)}
+                >
+                  <Text
+                    style={[
+                      styles.dateChipText,
+                      { color: occurredAtInput === todayInput ? theme.primary : theme.text },
+                    ]}
+                  >
+                    Hoy
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.dateChip,
+                    { borderColor: theme.border },
+                    occurredAtInput === yesterdayInput && {
+                      borderColor: theme.primary,
+                      backgroundColor: `${theme.primary}20`,
+                    },
+                  ]}
+                  onPress={() => applyPresetDay(-1)}
+                >
+                  <Text
+                    style={[
+                      styles.dateChipText,
+                      { color: occurredAtInput === yesterdayInput ? theme.primary : theme.text },
+                    ]}
+                  >
+                    Ayer
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.datePickerButton, { borderColor: theme.border }]}
+                  onPress={() => {
+                    setCalendarMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+                    setShowCalendar(true);
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={theme.textMuted} />
+                  <Text style={[styles.dateInput, { color: theme.text }]}>{formatDateLabel(selectedDate)}</Text>
+                </Pressable>
+              </View>
             </ScrollView>
           )}
 
@@ -813,7 +1100,8 @@ export function QuickAddTransactionModal({
             </Pressable>
           </Pressable>
         </Modal>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -821,8 +1109,11 @@ export function QuickAddTransactionModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: '#00000066',
+  },
+  keyboardWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalCard: {
     borderTopLeftRadius: 20,
@@ -861,32 +1152,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  amountBlock: {
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
     marginBottom: 10,
   },
-  conversionChip: {
-    alignSelf: 'flex-end',
+  categoryBox: {
+    width: 92,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 8,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+    gap: 6,
   },
-  conversionText: {
-    fontSize: 13,
+  categoryBoxIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBoxLabel: {
+    fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  amountCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    minHeight: 92,
   },
   conversionHint: {
-    fontSize: 12,
-    marginTop: 6,
+    fontSize: 11,
+    marginTop: 2,
     textAlign: 'right',
   },
   amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 10,
     gap: 8,
   },
   currencyBadge: {
@@ -920,31 +1231,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  categoryBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  categoryBannerText: {
-    flex: 1,
-  },
-  categoryBannerLabel: {
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  categoryIconWrapCompact: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginBottom: 0,
-  },
   backdropPressable: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
   },
   modalTitle: { fontWeight: '800', fontSize: 22 },
   scrollContent: {
@@ -965,8 +1254,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   amountInput: {
-    paddingVertical: 12,
-    fontSize: 34,
+    paddingVertical: 4,
+    fontSize: 30,
     fontWeight: '800',
     textAlign: 'right',
   },
@@ -978,10 +1267,35 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginHorizontal: -6,
   },
+  deleteCategoryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  deleteCategoryLabel: {
+    fontWeight: '700',
+    fontSize: 14,
+  },
   categoryCell: {
     width: '33.333%',
     paddingHorizontal: 6,
     paddingBottom: 12,
+    position: 'relative',
+  },
+  deleteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   categoryTile: {
     borderWidth: 1,
@@ -1008,18 +1322,22 @@ const styles = StyleSheet.create({
   addCategoryRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' },
   addCategoryInput: { flex: 1, marginBottom: 0 },
   addCategoryButton: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11 },
-  dateQuickRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  dateCompactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
   dateChip: {
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   dateChipText: {
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 12,
   },
-  datePickerRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   datePickerButton: {
     flex: 1,
     borderWidth: 1,
@@ -1029,7 +1347,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 10,
   },
   dateInput: {
     flex: 1,

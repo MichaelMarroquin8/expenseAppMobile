@@ -12,13 +12,49 @@ buildscript {
   }
 }
 
+def reactAndroidProperties = new Properties()
+file("../node_modules/react-native/ReactAndroid/gradle.properties").withInputStream { reactAndroidProperties.load(it) }
+def hermesVersionProperties = new Properties()
+file("../node_modules/react-native/sdks/hermes-engine/version.properties").withInputStream { hermesVersionProperties.load(it) }
+def reactAndroidVersion = reactAndroidProperties.getProperty("VERSION_NAME")
+def hermesAndroidVersion = hermesVersionProperties.getProperty("HERMES_V1_VERSION_NAME")
+
 allprojects {
   repositories {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
   }
+
+  // Expo modules and libraries depend on React Native without a version.
+  // The React Native plugin normally rewrites those coordinates after the app
+  // project is evaluated, which is too late once AGP resolves the release
+  // classpath during configuration.
+  configurations.configureEach {
+    resolutionStrategy {
+      dependencySubstitution {
+        substitute module("com.facebook.react:react-native") using module("com.facebook.react:react-android:${reactAndroidVersion}") because "React Native publishes the Android artifact as react-android"
+        substitute module("com.facebook.react:hermes-engine") using module("com.facebook.hermes:hermes-android:${hermesAndroidVersion}") because "Hermes publishes the Android artifact as hermes-android"
+        substitute module("com.facebook.react:hermes-android") using module("com.facebook.hermes:hermes-android:${hermesAndroidVersion}") because "Hermes moved to the com.facebook.hermes group"
+      }
+      force "com.facebook.react:react-android:${reactAndroidVersion}"
+      force "com.facebook.hermes:hermes-android:${hermesAndroidVersion}"
+    }
+  }
 }
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+subprojects { subproject ->
+  def enableJava17 = {
+    subproject.android {
+      compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+      }
+    }
+  }
+  subproject.plugins.withId("com.android.library", enableJava17)
+  subproject.plugins.withId("com.android.application", enableJava17)
+}

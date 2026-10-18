@@ -3,19 +3,19 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { OnboardingScreen } from '../features/onboarding/OnboardingScreen';
 import { AuthProvider, useAuth } from '../features/auth/AuthProvider';
-import { AuthScreen } from '../features/auth/AuthScreen';
 import { MainNavigator } from './navigation/MainNavigator';
 import { AppThemeProvider, useAppTheme } from '../core/theme/ThemeProvider';
+import { CaptureBridgeProvider } from '../features/sms/CaptureBridgeProvider';
 import { useFinanceStore } from '../store/useFinanceStore';
 
 function RootSwitch() {
   const onboardingDone = useFinanceStore((state) => state.onboardingDone);
   const { activeMode } = useAppTheme();
-  const { user, loading, isConfigured } = useAuth();
+  const { loading } = useAuth();
 
   return (
     <>
-      {loading ? null : isConfigured && !user ? <AuthScreen /> : onboardingDone ? <MainNavigator /> : <OnboardingScreen />}
+      {loading ? null : onboardingDone ? <MainNavigator /> : <OnboardingScreen />}
       <StatusBar style={activeMode === 'dark' ? 'light' : 'dark'} />
     </>
   );
@@ -26,7 +26,9 @@ export function AppRoot() {
     <SafeAreaProvider>
       <AuthProvider>
         <AppThemeProvider>
-          <RootSwitch />
+          <CaptureBridgeProvider>
+            <RootSwitch />
+          </CaptureBridgeProvider>
         </AppThemeProvider>
       </AuthProvider>
     </SafeAreaProvider>

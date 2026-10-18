@@ -135,6 +135,68 @@ export const formatAmountInput = (rawValue: string, currency = 'COP'): string =>
   return decimalPart.length > 0 ? `${formattedInt}${decimal}${decimalPart}` : formattedInt;
 };
 
+/** Acciones fraccionadas y cripto (ej. 0,2531 de SPY). */
+export const QUANTITY_MAX_DECIMALS = 8;
+
+/**
+ * Normaliza la cantidad tecleada. Acepta coma o punto y, si vienen los dos,
+ * el último es el decimal (así “1.250,5” y “1,250.5” valen 1250.5).
+ * Conserva la coma final mientras se escribe.
+ */
+export const parseQuantityInput = (input: string, maxDecimals = QUANTITY_MAX_DECIMALS): string => {
+  const cleaned = input.replace(/[^\d.,]/g, '');
+  if (!cleaned) return '';
+
+  const lastDot = cleaned.lastIndexOf('.');
+  const lastComma = cleaned.lastIndexOf(',');
+  const decimalIndex = Math.max(lastDot, lastComma);
+  const endsWithSeparator = /[.,]$/.test(cleaned);
+
+  const intDigits =
+    decimalIndex === -1 ? cleaned : cleaned.slice(0, decimalIndex).replace(/\D/g, '');
+  const decDigits =
+    decimalIndex === -1
+      ? ''
+      : cleaned
+          .slice(decimalIndex + 1)
+          .replace(/\D/g, '')
+          .slice(0, maxDecimals);
+
+  const hasFraction = endsWithSeparator || decDigits.length > 0;
+  const normalizedInt = intDigits.replace(/^0+(?=\d)/, '');
+  const intPart = normalizedInt || (hasFraction || intDigits.length > 0 ? '0' : '');
+  if (!intPart) return '';
+  if (endsWithSeparator && decDigits.length === 0) return `${intPart}.`;
+  if (decDigits.length > 0) return `${intPart}.${decDigits}`;
+  return intPart;
+};
+
+/** Muestra la cantidad en edición con coma decimal, sin agrupar miles (el cursor no se rompe). */
+export const formatQuantityInput = (rawValue: string): string => {
+  if (!rawValue) return '';
+  return rawValue.replace('.', ',');
+};
+
+export const quantityToRaw = (value: number, maxDecimals = QUANTITY_MAX_DECIMALS): string => {
+  if (!Number.isFinite(value) || value < 0) return '';
+  return value.toFixed(maxDecimals).replace(/\.?0+$/, '');
+};
+
+export const quantityFromRaw = (raw: string): number => {
+  if (!raw || raw === '.') return 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return value;
+};
+
+export const formatQuantity = (value: number, maxDecimals = QUANTITY_MAX_DECIMALS): string => {
+  if (!Number.isFinite(value)) return '0';
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDecimals,
+  }).format(value);
+};
+
 export const formatShortDate = (isoDate: string): string =>
   new Intl.DateTimeFormat('es-MX', {
     day: '2-digit',

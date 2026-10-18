@@ -21,6 +21,8 @@
     "expo-dev-client": "~57.0.20",
     "expo-font": "~57.0.4",
     "expo-linear-gradient": "~57.0.2",
+    "expo-modules-core": "~57.0.23",
+    "expense-app-bridge": "file:./modules/expense-app-bridge",
     "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.3",

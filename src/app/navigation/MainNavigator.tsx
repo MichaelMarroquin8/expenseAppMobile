@@ -18,7 +18,9 @@ import { SettingsScreen } from "../../features/settings/SettingsScreen";
 import { GoalsScreen } from "../../features/goals/GoalsScreen";
 import { ReportsScreen } from "../../features/reports/ReportsScreen";
 import { CardsScreen } from "../../features/cards/CardsScreen";
+import { CardDetailScreen } from "../../features/cards/CardDetailScreen";
 import { AccountsScreen } from "../../features/accounts/AccountsScreen";
+import { AccountDetailScreen } from "../../features/accounts/AccountDetailScreen";
 import { AccountFormScreen } from "../../features/accounts/AccountFormScreen";
 import { CategoriesScreen } from "../../features/categories";
 import { CurrencySelectScreen } from "../../features/settings/CurrencySelectScreen";
@@ -30,7 +32,9 @@ type RootStackParamList = {
   Goals: undefined;
   Reports: undefined;
   Cards: undefined;
+  CardDetail: { cardId: string };
   Accounts: undefined;
+  AccountDetail: { accountId: string };
   AccountForm: { accountId?: string } | undefined;
   Categories: undefined;
   Budgets: undefined;
@@ -59,6 +63,15 @@ function Tabs() {
           headerShown: false,
           tabBarActiveTintColor: theme.primary,
           tabBarInactiveTintColor: theme.textMuted,
+          tabBarButton: ({
+            style,
+            pressColor: _pressColor,
+            pressOpacity: _pressOpacity,
+            hoverEffect: _hoverEffect,
+            ...rest
+          }) => (
+            <Pressable {...rest} android_ripple={null} style={style} />
+          ),
           tabBarStyle: {
             backgroundColor: theme.surface,
             borderTopColor: theme.border,
@@ -73,16 +86,20 @@ function Tabs() {
             borderBottomRightRadius: 0,
             position: "absolute",
           },
-          tabBarIcon: ({ color, size }) => {
+          tabBarIcon: ({ color, focused, size }) => {
             const map: Record<
               keyof TabParamList,
               keyof typeof Ionicons.glyphMap
             > = {
-              Dashboard: "grid-outline",
-              Transactions: "swap-horizontal-outline",
-              Insights: "pie-chart-outline",
-              Sms: "chatbubble-ellipses-outline",
-              Settings: "settings-outline",
+              Dashboard: focused ? "grid" : "grid-outline",
+              Transactions: focused
+                ? "swap-horizontal"
+                : "swap-horizontal-outline",
+              Insights: focused ? "pie-chart" : "pie-chart-outline",
+              Sms: focused
+                ? "chatbubble-ellipses"
+                : "chatbubble-ellipses-outline",
+              Settings: focused ? "settings" : "settings-outline",
             };
             return (
               <Ionicons
@@ -187,9 +204,19 @@ export function MainNavigator() {
           options={{ title: "Tarjetas" }}
         />
         <Stack.Screen
+          name="CardDetail"
+          component={CardDetailScreen}
+          options={{ title: "Tarjeta", headerTitleAlign: "center" }}
+        />
+        <Stack.Screen
           name="Accounts"
           component={AccountsScreen}
           options={{ title: "Cuentas" }}
+        />
+        <Stack.Screen
+          name="AccountDetail"
+          component={AccountDetailScreen}
+          options={{ title: "Detalles", headerTitleAlign: "center" }}
         />
         <Stack.Screen
           name="AccountForm"

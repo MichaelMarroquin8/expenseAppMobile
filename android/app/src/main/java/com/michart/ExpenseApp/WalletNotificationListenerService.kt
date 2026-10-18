@@ -18,7 +18,7 @@ class WalletNotificationListenerService : NotificationListenerService() {
   override fun onNotificationPosted(sbn: StatusBarNotification?) {
     if (sbn == null) return
     val packageName = sbn.packageName ?: return
-    if (!WATCHED_PACKAGES.contains(packageName)) return
+    if (!getWatchedPackages(this).contains(packageName)) return
 
     val extras = sbn.notification?.extras ?: return
     val title = extras.getCharSequence("android.title")?.toString()?.trim().orEmpty()
@@ -49,6 +49,7 @@ class WalletNotificationListenerService : NotificationListenerService() {
   companion object {
     private const val PREFS = "expenseapp_wallet_notifications"
     private const val KEY_BUFFER = "buffer"
+    private const val KEY_PACKAGES = "watched_packages"
     private const val MAX_BUFFER = 80
 
     /** Paquetes conocidos de Google Wallet / Pay en distintos dispositivos. */
@@ -90,6 +91,53 @@ class WalletNotificationListenerService : NotificationListenerService() {
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .edit()
         .putString(KEY_BUFFER, "[]")
+        .apply()
+    }
+
+    fun getWatchedPackages(context: Context): List<String> {
+      val raw =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_PACKAGES, null)
+      if (raw.isNullOrBlank()) return WATCHED_PACKAGES.toList()
+      return try {
+        val array = JSONArray(raw)
+        val out = ArrayList<String>(array.length())
+        for (i in 0 until array.length()) {
+          val pkg = array.optString(i).trim()
+          if (pkg.isNotEmpty()) out.add(pkg)
+        }
+        if (out.isEmpty()) WATCHED_PACKAGES.toList() else out
+      } catch (_: Exception) {
+        WATCHED_PACKAGES.toList()
+      }
+    }
+
+    fun setWatchedPackages(context: Context, packages: List<String>) {
+      val array = JSONArray()
+      for (pkg in packages) {
+        val trimmed = pkg.trim()
+        if (trimmed.isNotEmpty()) array.put(trimmed)
+      }
+      context
+        .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(KEY_PACKAGES, array.toString())
+        .apply()
+    }
+
+    fun markConsumed(context: Context, ids: List<String>) {
+      if (ids.isEmpty()) return
+      val drop = ids.toSet()
+      val current = getBuffered(context)
+      val next = JSONArray()
+      for (i in 0 until current.length()) {
+        val item = current.optJSONObject(i) ?: continue
+        if (drop.contains(item.optString("id"))) continue
+        next.put(item)
+      }
+      context
+        .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(KEY_BUFFER, next.toString())
         .apply()
     }
 

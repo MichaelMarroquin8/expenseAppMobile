@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatMoney, monthKey, monthKeyFromIso } from '../../core/utils/format';
+import { isBalanceAdjustment } from '../../domain/accounts';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 type EntryKind = 'expense' | 'income';
@@ -167,7 +168,7 @@ export function InsightsScreen() {
 
   const periodTransactions = useMemo(() => {
     return transactions.filter((tx) => {
-      if (tx.type !== kind) return false;
+      if (isBalanceAdjustment(tx) || tx.type !== kind) return false;
       if (periodMode === 'month') {
         return monthKeyFromIso(tx.occurredAt) === activePeriodId;
       }

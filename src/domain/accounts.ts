@@ -1,5 +1,12 @@
 import { AccountKind, FinanceAccount } from './models';
 
+/** Corrección de saldo: vive en el historial de la cuenta, no en el libro diario. */
+export const BALANCE_ADJUSTMENT_CATEGORY = 'Ajuste';
+export const BALANCE_ADJUSTMENT_MERCHANT = 'Ajustar importe';
+
+export const isBalanceAdjustment = (tx: { category?: string; merchant?: string }): boolean =>
+  tx.category === BALANCE_ADJUSTMENT_CATEGORY || tx.merchant === BALANCE_ADJUSTMENT_MERCHANT;
+
 /** Kinds disponibles al crear/editar (sin legacy). */
 export const ACCOUNT_KIND_OPTIONS: AccountKind[] = [
   'default',
@@ -68,6 +75,49 @@ export const isLiabilityKind = (kind: AccountKind): boolean => {
 
 export const isInvestmentKind = (kind: AccountKind): boolean =>
   normalizeAccountKind(kind) === 'investment';
+
+/** Cuenta que puede ser el banco de una tarjeta: banco, débito, crédito o billetera. */
+export const isInstitutionAccount = (kind: AccountKind): boolean => {
+  const normalized = normalizeAccountKind(kind);
+  return (
+    normalized === 'default' ||
+    normalized === 'debit_card' ||
+    normalized === 'credit_card' ||
+    normalized === 'virtual'
+  );
+};
+
+export type AccountMovementRole =
+  | 'expense_source'
+  | 'income_destination'
+  | 'transfer_source'
+  | 'transfer_destination';
+
+const LIQUID_KINDS = new Set<AccountKind>(['default', 'cash', 'debit_card', 'virtual']);
+
+export const isLiquidKind = (kind: AccountKind): boolean => LIQUID_KINDS.has(normalizeAccountKind(kind));
+
+/**
+ * Qué cuentas pueden participar en cada movimiento.
+ * Gasto: solo de donde sale plata o se carga una compra (líquidas y tarjeta de crédito).
+ * Ingreso: solo cuentas líquidas. Pagar una deuda o aportar a una inversión es una transferencia.
+ * Transferencia: el origen no puede ser una deuda; el destino puede ser cualquiera.
+ */
+export const accountSupportsMovement = (kind: AccountKind, role: AccountMovementRole): boolean => {
+  const normalized = normalizeAccountKind(kind);
+  switch (role) {
+    case 'expense_source':
+      return LIQUID_KINDS.has(normalized) || normalized === 'credit_card';
+    case 'income_destination':
+      return LIQUID_KINDS.has(normalized);
+    case 'transfer_source':
+      return normalized !== 'payable';
+    case 'transfer_destination':
+      return true;
+    default:
+      return false;
+  }
+};
 
 /** Valor contable a mostrar (inversión = qty × precio si hay datos). */
 export const getAccountDisplayValue = (account: FinanceAccount): number => {

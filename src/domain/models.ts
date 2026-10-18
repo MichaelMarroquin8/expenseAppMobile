@@ -72,10 +72,12 @@ export interface FinanceAccount {
   color: string;
   icon?: string;
   note?: string;
+  /** Últimos 4 de la cuenta, para emparejar SMS como “cuenta *1750”. */
+  last4?: string;
   excludeFromTotal?: boolean;
   /** Ticker Yahoo (ej. SPY, VOO, BTC-USD). Solo inversiones. */
   symbol?: string;
-  /** Cantidad de acciones/unidades. */
+  /** Cantidad de acciones o fracciones (ej. 0.25 de SPY). */
   quantity?: number;
   lastPrice?: number;
   priceCurrency?: string;
@@ -108,7 +110,10 @@ export interface SmsDetection {
   amount?: number;
   merchant?: string;
   occurredAt?: string;
+  /** Últimos 4 de una tarjeta. */
   last4?: string;
+  /** Últimos 4 de la cuenta de origen, cuando el SMS es una transferencia o un QR. */
+  accountLast4?: string;
   categoryGuess?: string;
   cardId?: string;
   status: 'pending' | 'accepted' | 'discarded';
@@ -119,4 +124,14 @@ export interface AppSettings {
   currency: string;
   colorScheme: 'light' | 'dark' | 'system';
   remindersEnabled: boolean;
+  /** IDs de presets en bankSources (wallet, bancolombia, nu, …). */
+  enabledBankSourceIds: string[];
+  /** Short codes / remitentes SMS activos (derivados + editables). */
+  bankSmsShortCodes: string[];
+  /** Paquetes Android de notificaciones a escuchar. */
+  notificationPackages: string[];
+  /** Guarda rechazos del filtro de pagos (solo Android nativo). */
+  bridgeDebugEnabled: boolean;
+  /** Poll SMS en background vía WorkManager (~15 min). */
+  backgroundSyncEnabled: boolean;
 }

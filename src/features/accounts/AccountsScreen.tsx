@@ -16,7 +16,7 @@ import { convertToBase, getExchangeRates } from '../../backend/exchangeRates';
 import { fetchQuotes } from '../../backend/marketQuotes';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatMoney, formatShortDate } from '../../core/utils/format';
+import { formatMoney, formatQuantity, formatShortDate } from '../../core/utils/format';
 import {
   ACCOUNT_SECTION_ORDER,
   getAccountDisplayCurrency,
@@ -32,6 +32,7 @@ import { useFinanceStore } from '../../store/useFinanceStore';
 
 type Nav = NativeStackNavigationProp<{
   Accounts: undefined;
+  AccountDetail: { accountId: string };
   AccountForm: { accountId?: string } | undefined;
 }>;
 
@@ -228,7 +229,7 @@ export function AccountsScreen() {
         {sections.length === 0 ? (
           <PremiumCard>
             <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-              Aún no tienes cuentas. Añade efectivo, bancos, tarjetas de crédito o inversiones (ej. 2
+              Aún no tienes cuentas. Añade efectivo, bancos, tarjetas de crédito o inversiones (ej. 0,25
               acciones de SPY).
             </Text>
           </PremiumCard>
@@ -252,7 +253,7 @@ export function AccountsScreen() {
                   return (
                     <Pressable
                       key={account.id}
-                      onPress={() => navigation.navigate('AccountForm', { accountId: account.id })}
+                      onPress={() => navigation.navigate('AccountDetail', { accountId: account.id })}
                     >
                       <PremiumCard style={{ backgroundColor: `${account.color}12` }}>
                         <View style={styles.accountRow}>
@@ -267,7 +268,7 @@ export function AccountsScreen() {
                             </Text>
                             {isInvestmentKind(account.kind) && account.symbol ? (
                               <Text style={[styles.accountMeta, { color: theme.textMuted }]}>
-                                {account.quantity ?? 0} × {account.symbol}
+                                {formatQuantity(account.quantity ?? 0)} × {account.symbol}
                                 {account.priceUpdatedAt
                                   ? ` · ${formatShortDate(account.priceUpdatedAt)}`
                                   : ''}
