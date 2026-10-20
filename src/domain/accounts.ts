@@ -76,16 +76,8 @@ export const isLiabilityKind = (kind: AccountKind): boolean => {
 export const isInvestmentKind = (kind: AccountKind): boolean =>
   normalizeAccountKind(kind) === 'investment';
 
-/** Cuenta que puede ser el banco de una tarjeta: banco, débito, crédito o billetera. */
-export const isInstitutionAccount = (kind: AccountKind): boolean => {
-  const normalized = normalizeAccountKind(kind);
-  return (
-    normalized === 'default' ||
-    normalized === 'debit_card' ||
-    normalized === 'credit_card' ||
-    normalized === 'virtual'
-  );
-};
+/** Cuenta bancaria (kind `default` o el legacy `bank`). No incluye tarjetas, efectivo ni billeteras. */
+export const isBankAccount = (kind: AccountKind): boolean => normalizeAccountKind(kind) === 'default';
 
 export type AccountMovementRole =
   | 'expense_source'

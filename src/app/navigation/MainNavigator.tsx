@@ -26,6 +26,7 @@ import { CategoriesScreen } from "../../features/categories";
 import { CurrencySelectScreen } from "../../features/settings/CurrencySelectScreen";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { QuickAddTransactionModal } from "../../features/transactions/QuickAddTransactionModal";
+import { TransactionDetailScreen } from "../../features/transactions/TransactionDetailScreen";
 
 type RootStackParamList = {
   Tabs: undefined;
@@ -39,6 +40,7 @@ type RootStackParamList = {
   Categories: undefined;
   Budgets: undefined;
   CurrencySelect: undefined;
+  TransactionDetail: { transactionId: string };
 };
 
 export type TabParamList = {
@@ -61,6 +63,8 @@ function Tabs() {
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
+          // Evita que React Navigation sume el inset otra vez y deje un hueco bajo la barra.
+          safeAreaInsets: { top: 0, bottom: 0 },
           tabBarActiveTintColor: theme.primary,
           tabBarInactiveTintColor: theme.textMuted,
           tabBarButton: ({
@@ -75,16 +79,19 @@ function Tabs() {
           tabBarStyle: {
             backgroundColor: theme.surface,
             borderTopColor: theme.border,
-            height: 64 + Math.max(insets.bottom - 6, 0),
-            paddingBottom: Math.max(insets.bottom - 2, 8),
+            height: 58 + insets.bottom,
+            paddingBottom: insets.bottom,
             paddingTop: 6,
-            marginBottom: 0,
+            margin: 0,
+            left: 0,
+            right: 0,
             bottom: 0,
             borderTopLeftRadius: 18,
             borderTopRightRadius: 18,
             borderBottomLeftRadius: 0,
             borderBottomRightRadius: 0,
             position: "absolute",
+            elevation: 0,
           },
           tabBarIcon: ({ color, focused, size }) => {
             const map: Record<
@@ -102,11 +109,18 @@ function Tabs() {
               Settings: focused ? "settings" : "settings-outline",
             };
             return (
-              <Ionicons
-                name={map[route.name as keyof TabParamList]}
-                size={size}
-                color={color}
-              />
+              <View
+                style={[
+                  styles.tabIconSlot,
+                  focused && { backgroundColor: theme.border },
+                ]}
+              >
+                <Ionicons
+                  name={map[route.name as keyof TabParamList]}
+                  size={size}
+                  color={color}
+                />
+              </View>
             );
           },
         })}
@@ -244,6 +258,11 @@ export function MainNavigator() {
           component={CurrencySelectScreen}
           options={{ headerShown: false, title: "Seleccionar" }}
         />
+        <Stack.Screen
+          name="TransactionDetail"
+          component={TransactionDetailScreen}
+          options={{ title: "Detalles", headerTitleAlign: "center" }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -252,6 +271,13 @@ export function MainNavigator() {
 const styles = StyleSheet.create({
   tabsContainer: {
     flex: 1,
+  },
+  tabIconSlot: {
+    width: 56,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   quickAddButton: {
     position: "absolute",

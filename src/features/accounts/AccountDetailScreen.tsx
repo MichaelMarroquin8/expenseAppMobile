@@ -409,11 +409,17 @@ export function AccountDetailScreen() {
                 style={[styles.modalInput, { color: theme.text, borderColor: theme.border }]}
               />
               <View style={styles.modalActions}>
-                <Pressable onPress={() => setAdjustOpen(false)} style={styles.modalAction}>
-                  <Text style={[styles.modalActionText, { color: theme.textMuted }]}>Cancelar</Text>
+                <Pressable
+                  onPress={() => setAdjustOpen(false)}
+                  style={[styles.modalAction, { borderWidth: 1, borderColor: theme.border }]}
+                >
+                  <Text style={[styles.modalActionText, { color: theme.text }]}>Cancelar</Text>
                 </Pressable>
-                <Pressable onPress={saveAdjustment} style={styles.modalAction}>
-                  <Text style={[styles.modalActionText, { color: theme.primary }]}>Guardar</Text>
+                <Pressable
+                  onPress={saveAdjustment}
+                  style={[styles.modalAction, { backgroundColor: theme.primary }]}
+                >
+                  <Text style={[styles.modalActionText, { color: '#fff' }]}>Guardar</Text>
                 </Pressable>
               </View>
             </Pressable>
@@ -512,12 +518,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
   },
   modalCard: {
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    padding: 20,
   },
   modalTitle: { fontSize: 18, fontWeight: '800' },
   modalHint: { marginTop: 6, fontSize: 13, lineHeight: 18 },
@@ -532,10 +538,15 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 8,
+    gap: 10,
+    marginTop: 16,
   },
-  modalAction: { paddingHorizontal: 8, paddingVertical: 10 },
+  modalAction: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
   modalActionText: { fontWeight: '700', fontSize: 15 },
 });

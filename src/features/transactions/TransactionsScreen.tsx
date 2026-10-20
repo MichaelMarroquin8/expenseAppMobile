@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -10,13 +10,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PremiumCard, Screen } from "../../components/ui";
+import { ConfirmModal, PremiumCard, Screen } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from "../../core/utils/format";
 import { isBalanceAdjustment } from "../../domain/accounts";
 import { Transaction } from "../../domain/models";
 import { useFinanceStore } from "../../store/useFinanceStore";
 import { QuickAddTransactionModal } from "./QuickAddTransactionModal";
+import { SwipeableRow } from "./SwipeableRow";
 
 type MovementFilter = "all" | "expense" | "income" | "transfer";
 
@@ -52,6 +53,8 @@ export function TransactionsScreen() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
+  const closeOpenRow = useRef<(() => void) | null>(null);
   const [movementFilter, setMovementFilter] = useState<MovementFilter>("all");
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => monthKey());
 
@@ -361,22 +364,14 @@ export function TransactionsScreen() {
             onChangeText={setSearch}
             style={[
               styles.input,
+              styles.inputLast,
               { color: theme.text, borderColor: theme.border },
             ]}
           />
-          <Pressable
-            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-            onPress={() => {
-              setEditingTx(null);
-              setModalOpen(true);
-            }}
-          >
-            <Text style={styles.primaryButtonText}>Nueva transacción</Text>
-          </Pressable>
         </PremiumCard>
 
         {groupedByDay.map((group) => (
-          <PremiumCard key={group.dayKey}>
+          <PremiumCard key={group.dayKey} style={styles.dayCard}>
             <View style={styles.dayHeader}>
               <Text style={[styles.dayTitle, { color: theme.text }]}>
                 {group.label}
@@ -392,14 +387,25 @@ export function TransactionsScreen() {
                 ? accounts.find((item) => item.id === tx.accountId)
                 : undefined;
               return (
-                <View key={tx.id} style={styles.movementRow}>
-                  <Pressable
-                    style={styles.movementInfo}
-                    onPress={() => {
-                      setEditingTx(tx);
-                      setModalOpen(true);
-                    }}
-                  >
+                <SwipeableRow
+                  key={tx.id}
+                  backgroundColor={theme.card}
+                  onOpened={(close) => {
+                    if (closeOpenRow.current && closeOpenRow.current !== close) {
+                      closeOpenRow.current();
+                    }
+                    closeOpenRow.current = close;
+                  }}
+                  onPress={() =>
+                    navigation.navigate("TransactionDetail", { transactionId: tx.id })
+                  }
+                  onEdit={() => {
+                    setEditingTx(tx);
+                    setModalOpen(true);
+                  }}
+                  onDelete={() => setDeletingTx(tx)}
+                >
+                  <View style={styles.movementInfo}>
                     <Text style={[styles.title, { color: theme.text }]}>
                       {tx.merchant}
                     </Text>
@@ -412,54 +418,24 @@ export function TransactionsScreen() {
                         ? ` • ${formatMoney(tx.originalAmount, tx.originalCurrency)}`
                         : ""}
                     </Text>
-                  </Pressable>
-                  <View style={styles.amountCol}>
-                    <Pressable
-                      onPress={() => {
-                        setEditingTx(tx);
-                        setModalOpen(true);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.value,
-                          {
-                            color:
-                              tx.type === "income"
-                                ? theme.success
-                                : tx.type === "expense"
-                                  ? theme.danger
-                                  : theme.primary,
-                          },
-                        ]}
-                      >
-                        {tx.type === "income"
-                          ? "+"
-                          : tx.type === "expense"
-                            ? "-"
-                            : ""}
-                        {formatMoney(tx.amount, currency)}
-                      </Text>
-                    </Pressable>
-                    <View style={styles.rowActions}>
-                      <Pressable
-                        onPress={() => {
-                          setEditingTx(tx);
-                          setModalOpen(true);
-                        }}
-                      >
-                        <Text style={[styles.editAction, { color: theme.primary }]}>
-                          Editar
-                        </Text>
-                      </Pressable>
-                      <Pressable onPress={() => deleteTransaction(tx.id)}>
-                        <Text style={[styles.delete, { color: theme.warning }]}>
-                          Eliminar
-                        </Text>
-                      </Pressable>
-                    </View>
                   </View>
-                </View>
+                  <Text
+                    style={[
+                      styles.value,
+                      {
+                        color:
+                          tx.type === "income"
+                            ? theme.success
+                            : tx.type === "expense"
+                              ? theme.danger
+                              : theme.primary,
+                      },
+                    ]}
+                  >
+                    {tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}
+                    {formatMoney(tx.amount, currency)}
+                  </Text>
+                </SwipeableRow>
               );
             })}
           </PremiumCard>
@@ -484,6 +460,23 @@ export function TransactionsScreen() {
         onClose={() => {
           setModalOpen(false);
           setEditingTx(null);
+        }}
+      />
+
+      <ConfirmModal
+        open={!!deletingTx}
+        title="Eliminar movimiento"
+        message={
+          deletingTx
+            ? `¿Eliminar “${deletingTx.merchant}”? Esta acción no se puede deshacer.`
+            : ""
+        }
+        confirmLabel="Eliminar"
+        onCancel={() => setDeletingTx(null)}
+        onConfirm={() => {
+          if (!deletingTx) return;
+          deleteTransaction(deletingTx.id);
+          setDeletingTx(null);
         }}
       />
     </Screen>
@@ -588,18 +581,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
-  primaryButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    paddingVertical: 12,
+  inputLast: {
+    marginBottom: 0,
   },
-  primaryButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
+  dayCard: { overflow: "hidden", paddingBottom: 4 },
   dayHeader: {
-    marginBottom: 10,
+    marginBottom: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#94a3b822",
     paddingBottom: 8,
@@ -613,21 +600,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
   },
-  movementRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 9,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#94a3b822",
-  },
   title: { fontWeight: "700", fontSize: 16 },
   movementInfo: { flex: 1, paddingRight: 8 },
   subtitle: { fontSize: 12, marginTop: 3, maxWidth: 220 },
-  amountCol: { alignItems: "flex-end" },
   value: { fontWeight: "700" },
-  rowActions: { flexDirection: "row", gap: 12, marginTop: 4 },
-  editAction: { fontWeight: "600", fontSize: 12 },
-  delete: { fontWeight: "600", fontSize: 12 },
   emptyText: { fontSize: 13 },
 });

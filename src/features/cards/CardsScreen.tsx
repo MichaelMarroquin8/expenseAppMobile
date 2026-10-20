@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
-import { defaultIconForKind, isInstitutionAccount, isLiquidKind, normalizeAccountKind } from '../../domain/accounts';
+import { defaultIconForKind, isBankAccount } from '../../domain/accounts';
 import { cardAvailable, cardDebt } from '../../domain/cardLedger';
 import { FinanceAccount } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
@@ -52,18 +52,15 @@ export function CardsScreen() {
   const [dueRaw, setDueRaw] = useState('');
   const [errors, setErrors] = useState<CardFieldErrors>({});
   const scrollRef = useRef<ScrollView>(null);
+  const last4Ref = useRef<TextInput>(null);
+  const limitRef = useRef<TextInput>(null);
+  const dueRef = useRef<TextInput>(null);
 
   const bankAccounts = useMemo(
-    () =>
-      accounts.filter((account) =>
-        cardType === 'debit' ? isLiquidKind(account.kind) : isInstitutionAccount(account.kind),
-      ),
-    [accounts, cardType],
+    () => accounts.filter((account) => isBankAccount(account.kind)),
+    [accounts],
   );
   const selectedBank = bankAccounts.find((account) => account.id === accountId);
-  const selectedIsCreditAccount = selectedBank
-    ? normalizeAccountKind(selectedBank.kind) === 'credit_card'
-    : false;
 
   const clearError = (field: keyof CardFieldErrors) => {
     setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
@@ -87,8 +84,8 @@ export function CardsScreen() {
     if (!selectedBank || !normalizedBank) {
       nextErrors.bank =
         bankAccounts.length === 0
-          ? 'Crea primero una cuenta en Más, dentro de Cuentas.'
-          : 'Elige la cuenta de esta tarjeta.';
+          ? 'Crea primero una cuenta de banco en Más, dentro de Cuentas.'
+          : 'Elige la cuenta de banco de esta tarjeta.';
     }
     if (normalizedLast4.length !== 4) {
       nextErrors.last4 = 'Ingresa los últimos 4 dígitos.';
@@ -114,7 +111,7 @@ export function CardsScreen() {
 
     const color = palette[Math.floor(Math.random() * palette.length)];
     let linkedAccountId = selectedBank.id;
-    if (cardType === 'credit' && !selectedIsCreditAccount) {
+    if (cardType === 'credit') {
       const debtAccount: FinanceAccount = {
         id: `acc_${Date.now()}`,
         name: normalizedAlias,
@@ -155,6 +152,10 @@ export function CardsScreen() {
     <Screen>
       <ScrollView
         ref={scrollRef}
+        style={styles.flex}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 24, 32) }]}
       >
         <SectionTitle title="Tarjetas y métodos de pago" subtitle="Solo se guardan últimos 4 dígitos" />
@@ -172,17 +173,6 @@ export function CardsScreen() {
               </Text>
             </View>
           ) : null}
-          <TextInput
-            value={alias}
-            onChangeText={(value) => {
-              setAlias(value);
-              if (value.trim()) clearError('alias');
-            }}
-            placeholder="Nombre / alias (ej. Visa personal)"
-            placeholderTextColor={theme.textMuted}
-            style={[styles.input, { color: theme.text, borderColor: errors.alias ? theme.danger : theme.border }]}
-          />
-          {errors.alias ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.alias}</Text> : null}
 
           <View style={styles.segmentRow}>
             {(['credit', 'debit'] as const).map((item) => (
@@ -202,37 +192,133 @@ export function CardsScreen() {
             ))}
           </View>
 
-          <TextInput
-            value={last4}
-            onChangeText={(value) => {
-              const digits = value.replace(/\D/g, '').slice(0, 4);
-              setLast4(digits);
-              if (digits.length === 4) clearError('last4');
-            }}
-            placeholder="Últimos 4 dígitos"
-            placeholderTextColor={theme.textMuted}
-            keyboardType="number-pad"
-            maxLength={4}
-            style={[styles.input, { color: theme.text, borderColor: errors.last4 ? theme.danger : theme.border }]}
-          />
+          <View style={styles.inlineFields}>
+            <TextInput
+              value={alias}
+              onChangeText={(value) => {
+                setAlias(value);
+                if (value.trim()) clearError('alias');
+              }}
+              onSubmitEditing={() => last4Ref.current?.focus()}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              autoCorrect={false}
+              placeholder="Nombre"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                styles.aliasInput,
+                { color: theme.text, borderColor: errors.alias ? theme.danger : theme.border },
+              ]}
+            />
+            <TextInput
+              ref={last4Ref}
+              value={last4}
+              onChangeText={(value) => {
+                const digits = value.replace(/\D/g, '').slice(0, 4);
+                setLast4(digits);
+                if (digits.length === 4) {
+                  clearError('last4');
+                  if (cardType === 'credit') limitRef.current?.focus();
+                }
+              }}
+              placeholder="4 dígitos"
+              placeholderTextColor={theme.textMuted}
+              keyboardType="number-pad"
+              maxLength={4}
+              style={[
+                styles.input,
+                styles.last4Input,
+                { color: theme.text, borderColor: errors.last4 ? theme.danger : theme.border },
+              ]}
+            />
+          </View>
+          {errors.alias ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.alias}</Text> : null}
           {errors.last4 ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.last4}</Text> : null}
 
+          {cardType === 'credit' ? (
+            <>
+              <Text style={[styles.pickerTitle, { color: errors.limit || errors.days ? theme.danger : theme.text }]}>
+                Cupo y días
+              </Text>
+              <View style={styles.inlineFields}>
+                <TextInput
+                  ref={limitRef}
+                  value={formatAmountInput(limitRaw, currency)}
+                  onChangeText={(value) => {
+                    setLimitRaw(parseAmountInput(value, currency));
+                    if (Number(parseAmountInput(value, currency)) > 0) clearError('limit');
+                  }}
+                  placeholder={`Cupo ${currency}`}
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="decimal-pad"
+                  style={[
+                    styles.input,
+                    styles.limitInput,
+                    { color: theme.text, borderColor: errors.limit ? theme.danger : theme.border },
+                  ]}
+                />
+                <TextInput
+                  value={statementRaw}
+                  onChangeText={(value) => {
+                    const digits = value.replace(/\D/g, '').slice(0, 2);
+                    setStatementRaw(digits);
+                    clearError('days');
+                    if (digits.length === 2) dueRef.current?.focus();
+                  }}
+                  placeholder="Corte"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  style={[
+                    styles.input,
+                    styles.dayInput,
+                    { color: theme.text, borderColor: errors.days ? theme.danger : theme.border },
+                  ]}
+                />
+                <TextInput
+                  ref={dueRef}
+                  value={dueRaw}
+                  onChangeText={(value) => {
+                    setDueRaw(value.replace(/\D/g, '').slice(0, 2));
+                    clearError('days');
+                  }}
+                  placeholder="Pago"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  style={[
+                    styles.input,
+                    styles.dayInput,
+                    { color: theme.text, borderColor: errors.days ? theme.danger : theme.border },
+                  ]}
+                />
+              </View>
+              {errors.limit ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.limit}</Text> : null}
+              {errors.days ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.days}</Text> : null}
+            </>
+          ) : null}
+
           <Text style={[styles.pickerTitle, { color: errors.bank ? theme.danger : theme.text }]}>
-            {cardType === 'credit' ? 'Banco o cuenta de crédito' : 'Cuenta de donde sale'}
+            Cuenta del banco
           </Text>
           <Text style={[styles.hint, { color: theme.textMuted }]}>
             {cardType === 'credit'
-              ? selectedIsCreditAccount
-                ? 'La deuda queda en esta cuenta de crédito.'
-                : 'Si eliges un banco, al guardar se crea la cuenta donde vive la deuda.'
-              : 'Las compras de débito salen de esta cuenta el mismo día.'}
+              ? 'La deuda de la tarjeta se guarda en una cuenta nueva de este banco.'
+              : 'Las compras salen de esta cuenta el mismo día.'}
           </Text>
           {bankAccounts.length === 0 ? (
             <Text style={[styles.fieldError, { color: theme.textMuted, marginTop: 0 }]}>
-              Crea primero una cuenta en Más, dentro de Cuentas.
+              Crea primero una cuenta de banco en Más, dentro de Cuentas.
             </Text>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dayRow}
+            >
               {bankAccounts.map((account) => {
                 const selected = account.id === accountId;
                 return (
@@ -255,58 +341,6 @@ export function CardsScreen() {
             </ScrollView>
           )}
           {errors.bank ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.bank}</Text> : null}
-
-          {cardType === 'credit' ? (
-            <>
-              <TextInput
-                value={formatAmountInput(limitRaw, currency)}
-                onChangeText={(value) => {
-                  setLimitRaw(parseAmountInput(value, currency));
-                  if (Number(parseAmountInput(value, currency)) > 0) clearError('limit');
-                }}
-                placeholder={`Cupo (${currency})`}
-                placeholderTextColor={theme.textMuted}
-                keyboardType="decimal-pad"
-                style={[styles.input, { color: theme.text, borderColor: errors.limit ? theme.danger : theme.border }]}
-              />
-              {errors.limit ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.limit}</Text> : null}
-              <View style={styles.dayInputs}>
-                <TextInput
-                  value={statementRaw}
-                  onChangeText={(value) => {
-                    setStatementRaw(value.replace(/\D/g, '').slice(0, 2));
-                    clearError('days');
-                  }}
-                  placeholder="Día de corte"
-                  placeholderTextColor={theme.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  style={[
-                    styles.input,
-                    styles.dayInput,
-                    { color: theme.text, borderColor: errors.days ? theme.danger : theme.border },
-                  ]}
-                />
-                <TextInput
-                  value={dueRaw}
-                  onChangeText={(value) => {
-                    setDueRaw(value.replace(/\D/g, '').slice(0, 2));
-                    clearError('days');
-                  }}
-                  placeholder="Día de pago"
-                  placeholderTextColor={theme.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  style={[
-                    styles.input,
-                    styles.dayInput,
-                    { color: theme.text, borderColor: errors.days ? theme.danger : theme.border },
-                  ]}
-                />
-              </View>
-              {errors.days ? <Text style={[styles.fieldError, { color: theme.danger }]}>{errors.days}</Text> : null}
-            </>
-          ) : null}
 
           <Pressable style={[styles.saveButton, { backgroundColor: theme.primary }]} onPress={createCard}>
             <Text style={styles.saveButtonText}>Guardar tarjeta</Text>
@@ -346,6 +380,7 @@ export function CardsScreen() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { padding: 16 },
   formTitle: { fontWeight: '700', fontSize: 16, marginBottom: 10 },
   errorBanner: {
@@ -368,6 +403,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
+  inlineFields: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  aliasInput: { flex: 1, marginBottom: 8 },
+  last4Input: { width: 108, marginBottom: 8, textAlign: 'center' },
+  limitInput: { flex: 1.4, marginBottom: 8 },
   segmentRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segment: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   segmentText: { fontWeight: '600' },
@@ -382,8 +421,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   dayText: { fontWeight: '600' },
-  dayInputs: { flexDirection: 'row', gap: 8 },
-  dayInput: { flex: 1, marginBottom: 10 },
+  dayInput: { flex: 0.8, marginBottom: 8 },
   saveButton: { borderRadius: 12, alignItems: 'center', paddingVertical: 12, marginTop: 4 },
   saveButtonText: { color: '#fff', fontWeight: '700' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

@@ -1,0 +1,73 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users/{userId}/finance
+// Document ID: main
+// Fields:
+//   - snapshot: map (required) - copia local de finanzas del usuario
+//       onboardingDone: bool
+//       transactions, transactionCategories, accounts, budgets, goals,
+//       cards, smsDetections: list
+//       incomeCategories: list (optional)
+//       categoryIcons, settings: map
+//   - updatedAt: timestamp (required) - serverTimestamp()
+//   - schemaVersion: int (required, solo 1)
+//
+// No hay otras colecciones. El cliente hace get y set con merge
+// en users/{uid}/finance/main. Sin consultas where/orderBy/limit.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isValidList(value, maxSize) {
+      return value is list && value.size() <= maxSize;
+    }
+
+    function isValidFinanceDoc() {
+      let data = request.resource.data;
+      let snapshot = data.snapshot;
+      return data.keys().hasOnly(['snapshot', 'updatedAt', 'schemaVersion'])
+        && data.schemaVersion is int
+        && data.schemaVersion == 1
+        && data.updatedAt == request.time
+        && snapshot is map
+        && snapshot.keys().hasAll([
+          'onboardingDone',
+          'transactions',
+          'transactionCategories',
+          'categoryIcons',
+          'accounts',
+          'budgets',
+          'goals',
+          'cards',
+          'smsDetections',
+          'settings'
+        ])
+        && snapshot.onboardingDone is bool
+        && isValidList(snapshot.transactions, 10000)
+        && isValidList(snapshot.transactionCategories, 300)
+        && (!('incomeCategories' in snapshot) || isValidList(snapshot.incomeCategories, 300))
+        && snapshot.categoryIcons is map
+        && isValidList(snapshot.accounts, 500)
+        && isValidList(snapshot.budgets, 2000)
+        && isValidList(snapshot.goals, 500)
+        && isValidList(snapshot.cards, 200)
+        && isValidList(snapshot.smsDetections, 200)
+        && snapshot.settings is map;
+    }
+
+    match /users/{userId}/finance/main {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidFinanceDoc();
+      allow delete: if false;
+    }
+  }
+}

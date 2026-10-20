@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Facebook from 'expo-auth-session/providers/facebook';
 import * as Google from 'expo-auth-session/providers/google';
@@ -44,6 +45,8 @@ export function AuthForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,25 +149,57 @@ export function AuthForm() {
           placeholderTextColor={theme.textMuted}
           style={[styles.input, { color: theme.text, borderColor: theme.border }]}
         />
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Contraseña"
-          secureTextEntry
-          editable={!busy}
-          placeholderTextColor={theme.textMuted}
-          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-        />
-        {mode === 'signup' ? (
+        <View style={styles.passwordWrap}>
           <TextInput
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Confirmar contraseña"
-            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Contraseña"
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
             editable={!busy}
             placeholderTextColor={theme.textMuted}
-            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+            style={[styles.input, styles.passwordInput, { color: theme.text, borderColor: theme.border }]}
           />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+            hitSlop={8}
+            disabled={busy}
+            style={styles.eyeButton}
+            onPress={() => setShowPassword((visible) => !visible)}
+          >
+            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.textMuted} />
+          </Pressable>
+        </View>
+        {mode === 'signup' ? (
+          <View style={styles.passwordWrap}>
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirmar contraseña"
+              secureTextEntry={!showConfirmPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!busy}
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, styles.passwordInput, { color: theme.text, borderColor: theme.border }]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showConfirmPassword ? 'Ocultar confirmación' : 'Mostrar confirmación'}
+              hitSlop={8}
+              disabled={busy}
+              style={styles.eyeButton}
+              onPress={() => setShowConfirmPassword((visible) => !visible)}
+            >
+              <Ionicons
+                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={theme.textMuted}
+              />
+            </Pressable>
+          </View>
         ) : null}
 
         {error ? <Text style={[styles.error, { color: theme.danger }]}>{error}</Text> : null}
@@ -185,6 +220,8 @@ export function AuthForm() {
             setMode((current) => (current === 'login' ? 'signup' : 'login'));
             setError(null);
             setConfirmPassword('');
+            setShowPassword(false);
+            setShowConfirmPassword(false);
           }}
         >
           <Text style={[styles.buttonText, { color: theme.text }]}>
@@ -232,6 +269,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 10,
+  },
+  passwordWrap: {
+    position: 'relative',
+    marginBottom: 10,
+  },
+  passwordInput: {
+    marginBottom: 0,
+    paddingRight: 44,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 8,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   button: {
     borderRadius: 12,

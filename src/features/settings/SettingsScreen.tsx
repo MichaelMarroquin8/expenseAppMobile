@@ -20,12 +20,12 @@ const THEME_MODES = [
 ] as const;
 
 const MODULES = [
+  { label: 'Cuentas', route: 'Accounts' },
+  { label: 'Tarjetas', route: 'Cards' },
+  { label: 'Categorías', route: 'Categories' },
+  { label: 'Reportes', route: 'Reports' },
   { label: 'Presupuestos', route: 'Budgets' },
   { label: 'Metas de ahorro', route: 'Goals' },
-  { label: 'Reportes', route: 'Reports' },
-  { label: 'Tarjetas', route: 'Cards' },
-  { label: 'Cuentas', route: 'Accounts' },
-  { label: 'Categorías', route: 'Categories' },
 ] as const;
 
 const formatTs = (ms: number | null | undefined): string => {
@@ -37,7 +37,7 @@ export function SettingsScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { user, isConfigured, signOutCurrent } = useAuth();
+  const { user, isConfigured, signOutCurrent, syncStatus, syncError, lastSyncedAt, checkAndSync } = useAuth();
   const settings = useFinanceStore((state) => state.settings);
   const updateSettings = useFinanceStore((state) => state.updateSettings);
   const bridge = useCaptureBridge();
@@ -74,6 +74,46 @@ export function SettingsScreen() {
     : bridge.smsEnabled
       ? 'Escuchando'
       : 'Activar';
+
+  const syncVisual = !user
+    ? {
+        icon: 'cloud-outline' as const,
+        color: theme.textMuted,
+        label: 'Inicia sesión para guardar tus finanzas en la nube.',
+      }
+    : syncStatus === 'checking'
+      ? { icon: 'sync-outline' as const, color: theme.primary, label: 'Comprobando con la nube…' }
+      : syncStatus === 'synced'
+        ? {
+            icon: 'cloud-done-outline' as const,
+            color: theme.success,
+            label: lastSyncedAt ? `Sincronizado · ${formatTs(lastSyncedAt)}` : 'Sincronizado',
+          }
+        : syncStatus === 'out-of-sync'
+          ? {
+              icon: 'cloud-upload-outline' as const,
+              color: theme.warning,
+              label: 'Hay cambios locales sin subir.',
+            }
+          : syncStatus === 'error'
+            ? {
+                icon: 'cloud-offline-outline' as const,
+                color: theme.danger,
+                label: syncError ?? 'No se pudo sincronizar con la nube.',
+              }
+            : {
+                icon: 'cloud-outline' as const,
+                color: theme.textMuted,
+                label: 'Aún no se ha comprobado.',
+              };
+
+  const syncButtonLabel = !user
+    ? 'Iniciar sesión'
+    : syncStatus === 'checking'
+      ? 'Comprobando…'
+      : syncStatus === 'synced'
+        ? 'Comprobar de nuevo'
+        : 'Sincronizar ahora';
 
   return (
     <Screen>
@@ -128,6 +168,34 @@ export function SettingsScreen() {
             ) : null}
           </PremiumCard>
         )}
+
+        <PremiumCard>
+          <View style={styles.syncHeader}>
+            <Ionicons name={syncVisual.icon} size={22} color={syncVisual.color} />
+            <View style={styles.navText}>
+              <Text style={[styles.title, { color: theme.text }]}>Sincronización</Text>
+              <Text style={[styles.note, { color: syncVisual.color }]}>{syncVisual.label}</Text>
+            </View>
+          </View>
+          <Pressable
+            android_ripple={null}
+            disabled={Boolean(user) && syncStatus === 'checking'}
+            style={[
+              styles.syncButton,
+              { backgroundColor: theme.primary },
+              user && syncStatus === 'checking' && styles.syncButtonBusy,
+            ]}
+            onPress={() => {
+              if (!user) {
+                setAccountOpen(true);
+                return;
+              }
+              void checkAndSync();
+            }}
+          >
+            <Text style={styles.syncButtonText}>{syncButtonLabel}</Text>
+          </Pressable>
+        </PremiumCard>
 
         <PremiumCard>
           <Text style={[styles.title, { color: theme.text }]}>Tema</Text>
@@ -493,5 +561,14 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   disclosureLabel: { fontWeight: '600', fontSize: 15 },
+  syncHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  syncButton: {
+    marginTop: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  syncButtonBusy: { opacity: 0.7 },
+  syncButtonText: { color: '#fff', fontWeight: '700' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
 });

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -17,8 +17,8 @@ import {
   formatShortDate,
   parseAmountInput,
 } from "../../core/utils/format";
+import { reconcileDetections, SmsRawInput } from "../../domain/smsParser";
 import { useFinanceStore } from "../../store/useFinanceStore";
-import { SmsRawInput } from "../../domain/smsParser";
 
 const mockMessages: SmsRawInput[] = [
   {
@@ -33,6 +33,7 @@ export function SmsInboxScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
   const detections = useFinanceStore((state) => state.smsDetections);
+  const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
   const processSmsBatch = useFinanceStore((state) => state.processSmsBatch);
   const updateSmsDetection = useFinanceStore((state) => state.updateSmsDetection);
@@ -48,7 +49,13 @@ export function SmsInboxScreen() {
   const [manualMessage, setManualMessage] = useState("");
   const [manualChannel, setManualChannel] = useState<"sms" | "email">("sms");
 
-  const pending = detections.filter((item) => item.status === "pending");
+  const pending = useMemo(
+    () =>
+      reconcileDetections(detections, transactions).filter(
+        (item) => item.status === "pending" && !item.duplicate,
+      ),
+    [detections, transactions],
+  );
 
   const processManualInput = () => {
     const normalized = manualMessage.trim();
@@ -184,11 +191,6 @@ export function SmsInboxScreen() {
                   {item.last4 ? ` (agrega una con terminación ${item.last4})` : ""}
                 </Text>
               )}
-              {item.duplicate ? (
-                <Text style={[styles.meta, { color: theme.warning }]}>
-                  Aviso: ya existe un movimiento similar hoy (puedes confirmarlo si es una compra distinta)
-                </Text>
-              ) : null}
               <View style={styles.actions}>
                 <Pressable
                   style={[styles.actionBtn, { backgroundColor: theme.success }]}

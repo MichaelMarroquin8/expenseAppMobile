@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -21,6 +20,7 @@ import {
   getExchangeRates,
   getUnitsOfBasePerOne,
 } from '../../backend/exchangeRates';
+import { ConfirmModal } from '../../components/ui';
 import { findCurrency } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
@@ -29,7 +29,14 @@ import {
   getCurrencyFractionDigits,
   parseAmountInput,
 } from '../../core/utils/format';
-import { accountSupportsMovement, type AccountMovementRole } from '../../domain/accounts';
+import {
+  accountSupportsMovement,
+  defaultIconForKind,
+  getAccountDisplayCurrency,
+  getAccountDisplayValue,
+  isLiabilityKind,
+  type AccountMovementRole,
+} from '../../domain/accounts';
 import { Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
@@ -130,12 +137,14 @@ export function QuickAddTransactionModal({
 
   const [step, setStep] = useState<'category' | 'amount'>('category');
   const [categoryPicked, setCategoryPicked] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [type, setType] = useState<'income' | 'expense' | 'transfer'>(initialType);
   const [amountRaw, setAmountRaw] = useState('');
   const [merchant, setMerchant] = useState('');
   const [category, setCategory] = useState('Comida');
   const [accountId, setAccountId] = useState<string | undefined>(undefined);
   const [destinationAccountId, setDestinationAccountId] = useState<string | undefined>(undefined);
+  const [transferSlot, setTransferSlot] = useState<'source' | 'destination' | null>(null);
   const [cardId, setCardId] = useState<string | undefined>(undefined);
   const [newCategory, setNewCategory] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -144,6 +153,7 @@ export function QuickAddTransactionModal({
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [entryCurrency, setEntryCurrency] = useState(defaultCurrency);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [categoryDeleteOpen, setCategoryDeleteOpen] = useState(false);
   const [rates, setRates] = useState<Record<string, number> | null>(null);
   const keypadAnim = useRef(new Animated.Value(1)).current;
 
@@ -180,6 +190,8 @@ export function QuickAddTransactionModal({
       setCurrencyPickerOpen(false);
       setStep('amount');
       setCategoryPicked(true);
+      setDeleteArmed(false);
+      setTransferSlot(null);
       return;
     }
 
@@ -205,14 +217,10 @@ export function QuickAddTransactionModal({
     setMerchant('');
     setNewCategory('');
     setCategory(startType === 'income' ? 'Salario' : 'Comida');
-    setAccountId(initialSourceId);
+    setAccountId(startType === 'transfer' ? presetSource : initialSourceId);
     setCardId(undefined);
-    setDestinationAccountId(
-      presetDestination ??
-        accounts.find(
-          (account) => account.id !== initialSourceId && accountSupportsMovement(account.kind, 'transfer_destination'),
-        )?.id,
-    );
+    setDestinationAccountId(startType === 'transfer' ? presetDestination : undefined);
+    setTransferSlot(null);
     setOccurredAtInput(toLocalDateInput(new Date()));
     setCalendarMonth(new Date());
     setShowCalendar(false);
@@ -220,6 +228,7 @@ export function QuickAddTransactionModal({
     setCurrencyPickerOpen(false);
     setStep(startType === 'transfer' ? 'amount' : 'category');
     setCategoryPicked(startType === 'transfer');
+    setDeleteArmed(false);
   }, [open, initialType, accounts, editingTransaction, defaultCurrency, presetAccountId, presetDestinationAccountId]);
 
   useEffect(() => {
@@ -242,9 +251,10 @@ export function QuickAddTransactionModal({
 
   useEffect(() => {
     if (!open || step !== 'amount') return;
+    if (type === 'transfer' && (!accountId || !destinationAccountId || transferSlot)) return;
     const timer = setTimeout(() => amountInputRef.current?.focus(), 120);
     return () => clearTimeout(timer);
-  }, [open, step]);
+  }, [accountId, destinationAccountId, open, step, transferSlot, type]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -286,6 +296,12 @@ export function QuickAddTransactionModal({
     if (!open) return;
     const savedId = editingTransaction?.type === type ? editingTransaction.accountId : undefined;
     if (accountId && (accountId === savedId || sourceAccounts.some((account) => account.id === accountId))) return;
+    if (type === 'transfer' && !editingTransaction) {
+      const presetOk = !!presetAccountId && sourceAccounts.some((account) => account.id === presetAccountId);
+      if (!accountId && presetOk) setAccountId(presetAccountId);
+      else if (accountId) setAccountId(presetOk ? presetAccountId : undefined);
+      return;
+    }
     const presetOk = !!presetAccountId && sourceAccounts.some((account) => account.id === presetAccountId);
     setAccountId(presetOk ? presetAccountId : sourceAccounts[0]?.id);
   }, [accountId, editingTransaction, open, presetAccountId, sourceAccounts, type]);
@@ -308,7 +324,11 @@ export function QuickAddTransactionModal({
     ) {
       return;
     }
-    setDestinationAccountId(destinationAccounts[0]?.id);
+    if (editingTransaction?.type === 'transfer' && savedId && savedId !== accountId) {
+      setDestinationAccountId(savedId);
+      return;
+    }
+    if (destinationAccountId) setDestinationAccountId(undefined);
   }, [
     accountId,
     destinationAccountId,
@@ -454,10 +474,17 @@ export function QuickAddTransactionModal({
   const selectType = (option: 'income' | 'expense' | 'transfer') => {
     if (option === type) return;
     setType(option);
+    setDeleteArmed(false);
     if (option === 'transfer') {
       setStep('amount');
+      setTransferSlot(null);
+      if (!editingTransaction) {
+        setAccountId(undefined);
+        setDestinationAccountId(undefined);
+      }
       return;
     }
+    setTransferSlot(null);
     const targetList = option === 'income' ? incomeCategories : expenseCategories;
     const fallback = option === 'income' ? 'Salario' : 'Comida';
     setCategory(targetList.includes(fallback) ? fallback : (targetList[0] ?? fallback));
@@ -472,6 +499,7 @@ export function QuickAddTransactionModal({
     }
     setCategory(item);
     setCategoryPicked(true);
+    setDeleteArmed(false);
     setStep('amount');
   };
 
@@ -479,12 +507,14 @@ export function QuickAddTransactionModal({
     ignoreNextCategoryPress.current = true;
     setCategory(item);
     setCategoryPicked(true);
+    setDeleteArmed(true);
     setTimeout(() => {
       ignoreNextCategoryPress.current = false;
     }, 450);
   };
 
   const canDeleteSelected =
+    deleteArmed &&
     categoryPicked &&
     type !== 'transfer' &&
     activeCategories.includes(category) &&
@@ -492,26 +522,19 @@ export function QuickAddTransactionModal({
 
   const confirmDeleteSelected = () => {
     if (!canDeleteSelected) return;
+    setCategoryDeleteOpen(true);
+  };
+
+  const deleteSelectedCategory = () => {
     const target = category;
     const kind = type === 'income' ? 'income' : 'expense';
-    Alert.alert(
-      'Eliminar categoría',
-      `¿Eliminar “${target}”? Los movimientos que ya la usan conservan el nombre.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => {
-            removeTransactionCategory(target, kind);
-            const remaining = activeCategories.filter((item) => item !== target);
-            const fallback = kind === 'income' ? 'Salario' : 'Comida';
-            setCategory(remaining.includes(fallback) ? fallback : (remaining[0] ?? fallback));
-            setCategoryPicked(false);
-          },
-        },
-      ],
-    );
+    removeTransactionCategory(target, kind);
+    const remaining = activeCategories.filter((item) => item !== target);
+    const fallback = kind === 'income' ? 'Salario' : 'Comida';
+    setCategory(remaining.includes(fallback) ? fallback : (remaining[0] ?? fallback));
+    setCategoryPicked(false);
+    setDeleteArmed(false);
+    setCategoryDeleteOpen(false);
   };
 
   const iconFor = (item: string): keyof typeof Ionicons.glyphMap =>
@@ -522,6 +545,7 @@ export function QuickAddTransactionModal({
   const onHeaderLeft = () => {
     if (step === 'amount' && type !== 'transfer' && !editingTransaction) {
       Keyboard.dismiss();
+      setDeleteArmed(false);
       setStep('category');
       return;
     }
@@ -569,6 +593,82 @@ export function QuickAddTransactionModal({
   }, [calendarDays]);
 
   const categoryPrompt = type === 'income' ? '¿Qué tipo de ingreso es?' : '¿En qué lo gastaste?';
+  const transferReady = type === 'transfer' && !!accountId && !!destinationAccountId && !transferSlot;
+  const showAmountEntry = type !== 'transfer' || transferReady;
+  const transferPickerAccounts = (transferSlot === 'source' ? sourceAccounts : destinationAccounts).filter(
+    (account) => account.id !== (transferSlot === 'source' ? destinationAccountId : accountId),
+  );
+
+  const chooseTransferAccount = (id: string) => {
+    if (transferSlot === 'destination') {
+      setDestinationAccountId(id);
+      setTransferSlot(accountId ? null : 'source');
+      return;
+    }
+    setAccountId(id);
+    if (destinationAccountId === id) {
+      setDestinationAccountId(undefined);
+      setTransferSlot('destination');
+      return;
+    }
+    setTransferSlot(destinationAccountId ? null : 'destination');
+  };
+
+  const renderTransferSlot = (slot: 'source' | 'destination') => {
+    const selectedId = slot === 'source' ? accountId : destinationAccountId;
+    const account = accounts.find((item) => item.id === selectedId);
+    const active = transferSlot === slot;
+    return (
+      <Pressable
+        onPress={() => setTransferSlot(slot)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          account
+            ? `${slot === 'source' ? 'Origen' : 'Destino'} ${account.name}. Toca para cambiarla`
+            : slot === 'source'
+              ? 'Elegir cuenta de origen'
+              : 'Elegir a dónde va'
+        }
+        style={[
+          styles.transferSlot,
+          { borderColor: active ? theme.primary : theme.border, backgroundColor: theme.card },
+          active && { backgroundColor: `${theme.primary}14` },
+        ]}
+      >
+        {account ? (
+          <>
+            <View style={[styles.transferIcon, { backgroundColor: account.color || theme.primary }]}>
+              <Ionicons
+                name={(account.icon ?? defaultIconForKind(account.kind)) as keyof typeof Ionicons.glyphMap}
+                size={26}
+                color="#fff"
+              />
+            </View>
+            {isLiabilityKind(account.kind) ? (
+              <Text style={[styles.transferKind, { color: theme.textMuted }]} numberOfLines={1}>
+                Dinero que debo
+              </Text>
+            ) : null}
+            <Text style={[styles.transferName, { color: theme.text }]} numberOfLines={2}>
+              {account.name}
+            </Text>
+            <Text style={[styles.transferBalance, { color: theme.textMuted }]} numberOfLines={1}>
+              {formatMoney(getAccountDisplayValue(account), getAccountDisplayCurrency(account))}
+            </Text>
+          </>
+        ) : (
+          <>
+            <View style={[styles.transferIcon, { backgroundColor: `${theme.textMuted}22` }]}>
+              <Ionicons name="add" size={28} color={theme.textMuted} />
+            </View>
+            <Text style={[styles.transferName, { color: theme.textMuted }]}>
+              {slot === 'source' ? 'Desde' : 'Hacia'}
+            </Text>
+          </>
+        )}
+      </Pressable>
+    );
+  };
   const typeSegment = (
     <View style={styles.segmentRow}>
       {(['expense', 'income', 'transfer'] as const).map((option) => (
@@ -592,23 +692,25 @@ export function QuickAddTransactionModal({
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onHeaderLeft}>
       <View style={styles.modalOverlay}>
-        <Pressable
-          style={styles.backdropPressable}
-          onPress={close}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar"
-        />
         <KeyboardAvoidingView
-          pointerEvents="box-none"
           style={styles.keyboardWrap}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
         >
+        <Pressable
+          style={styles.backdropSpacer}
+          onPress={close}
+          accessibilityRole="button"
+          accessibilityLabel="Cerrar"
+        />
         <View
-          onStartShouldSetResponder={() => true}
           style={[
             styles.modalCard,
-            step === 'category' ? styles.modalCardCategory : styles.modalCardAmount,
+            step === 'category'
+              ? styles.modalCardCategory
+              : showAmountEntry
+                ? styles.modalCardAmount
+                : styles.modalCardTransferPick,
             { backgroundColor: theme.surface, borderColor: theme.border },
           ]}
         >
@@ -705,7 +807,7 @@ export function QuickAddTransactionModal({
                           {item}
                         </Text>
                       </Pressable>
-                      {selected && !PROTECTED_CATEGORIES.includes(item) ? (
+                      {selected && deleteArmed && !PROTECTED_CATEGORIES.includes(item) ? (
                         <Pressable
                           onPress={confirmDeleteSelected}
                           hitSlop={6}
@@ -740,6 +842,67 @@ export function QuickAddTransactionModal({
               contentContainerStyle={styles.scrollContent}
             >
               {typeSegment}
+              {type === 'transfer' ? (
+                <View style={styles.transferPair}>
+                  {renderTransferSlot('source')}
+                  <Ionicons name="arrow-forward" size={18} color={theme.textMuted} />
+                  {renderTransferSlot('destination')}
+                </View>
+              ) : null}
+              {type === 'transfer' && transferSlot ? (
+                <View style={styles.transferPicker}>
+                  <Text style={[styles.blockTitle, { color: theme.text }]}>
+                    {transferSlot === 'source' ? '¿De dónde sale?' : '¿A dónde va?'}
+                  </Text>
+                  {transferPickerAccounts.length === 0 ? (
+                    <Text style={[styles.bannerHint, { color: theme.textMuted }]}>
+                      {accounts.length < 2
+                        ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
+                        : transferSlot === 'source'
+                          ? 'No hay una cuenta de origen válida.'
+                          : 'Agrega otra cuenta para elegir el destino.'}
+                    </Text>
+                  ) : (
+                    transferPickerAccounts.map((account) => {
+                      const selected =
+                        (transferSlot === 'source' ? accountId : destinationAccountId) === account.id;
+                      const iconName = (account.icon ??
+                        defaultIconForKind(account.kind)) as keyof typeof Ionicons.glyphMap;
+                      return (
+                        <Pressable
+                          key={account.id}
+                          onPress={() => chooseTransferAccount(account.id)}
+                          style={[
+                            styles.transferOption,
+                            { borderColor: selected ? theme.primary : theme.border, backgroundColor: theme.card },
+                            selected && { backgroundColor: `${theme.primary}14` },
+                          ]}
+                        >
+                          <View style={[styles.transferOptionIcon, { backgroundColor: account.color || theme.primary }]}>
+                            <Ionicons name={iconName} size={18} color="#fff" />
+                          </View>
+                          <View style={styles.transferOptionBody}>
+                            <Text style={[styles.transferOptionName, { color: theme.text }]} numberOfLines={1}>
+                              {account.name}
+                            </Text>
+                            <Text style={[styles.transferBalance, { color: theme.textMuted }]} numberOfLines={1}>
+                              {isLiabilityKind(account.kind) ? 'Dinero que debo · ' : ''}
+                              {formatMoney(getAccountDisplayValue(account), getAccountDisplayCurrency(account))}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </View>
+              ) : null}
+              {type === 'transfer' && !transferSlot && !transferReady ? (
+                <Text style={[styles.stepHint, { color: theme.textMuted }]}>
+                  Toca un cuadro para elegir de dónde sale y a dónde va.
+                </Text>
+              ) : null}
+              {showAmountEntry ? (
+              <>
               <View style={styles.heroRow}>
                 {type !== 'transfer' ? (
                   <Pressable
@@ -749,11 +912,19 @@ export function QuickAddTransactionModal({
                     style={[styles.categoryBox, { borderColor: theme.border, backgroundColor: `${theme.primary}14` }]}
                   >
                     <View style={[styles.categoryBoxIcon, { backgroundColor: `${theme.primary}22` }]}>
-                      <Ionicons name={iconFor(category)} size={20} color={theme.primary} />
+                      <Ionicons name={iconFor(category)} size={18} color={theme.primary} />
                     </View>
-                    <Text style={[styles.categoryBoxLabel, { color: theme.text }]} numberOfLines={2}>
-                      {category}
-                    </Text>
+                    <View style={styles.categoryBoxLabelWrap}>
+                      <Text
+                        style={[styles.categoryBoxLabel, { color: theme.text }]}
+                        numberOfLines={2}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.75}
+                        ellipsizeMode="tail"
+                      >
+                        {category}
+                      </Text>
+                    </View>
                   </Pressable>
                 ) : null}
 
@@ -799,32 +970,28 @@ export function QuickAddTransactionModal({
               <TextInput
                 value={merchant}
                 onChangeText={setMerchant}
-                placeholder={type === 'transfer' ? 'Nota opcional de transferencia' : 'Comercio o descripción'}
+                placeholder={type === 'transfer' ? 'Nota' : 'Comercio o descripción'}
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
 
+              {type !== 'transfer' ? (
+              <>
               <Text style={[styles.blockTitle, { color: theme.text }]}>
-                {type === 'expense' ? 'Sale de' : type === 'income' ? 'Entra a' : 'Cuenta origen'}
+                {type === 'expense' ? 'Sale de' : 'Entra a'}
               </Text>
               <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
                 {type === 'expense'
                   ? 'Efectivo, banco, débito, billetera y tarjetas de crédito.'
-                  : type === 'income'
-                    ? 'Solo cuentas donde puede entrar plata.'
-                    : 'De dónde sale. Una deuda no puede ser el origen.'}
+                  : 'Solo cuentas donde puede entrar plata.'}
               </Text>
               {sourceAccounts.length === 0 ? (
                 <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
                   {accounts.length === 0
-                    ? type === 'transfer'
-                      ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
-                      : 'Sin cuentas registradas (se guardará como movimiento general).'
+                    ? 'Sin cuentas registradas (se guardará como movimiento general).'
                     : type === 'expense'
                       ? 'Ninguna cuenta puede pagar este gasto. Inversiones y deudas no salen aquí.'
-                      : type === 'income'
-                        ? 'Ninguna cuenta puede recibir este ingreso.'
-                        : 'No hay una cuenta de origen válida.'}
+                      : 'Ninguna cuenta puede recibir este ingreso.'}
                 </Text>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
@@ -843,6 +1010,8 @@ export function QuickAddTransactionModal({
                   ))}
                 </ScrollView>
               )}
+              </>
+              ) : null}
 
               {type === 'expense' && accountCards.length > 0 ? (
                 <>
@@ -867,39 +1036,6 @@ export function QuickAddTransactionModal({
                       </Pressable>
                     ))}
                   </ScrollView>
-                </>
-              ) : null}
-
-              {type === 'transfer' ? (
-                <>
-                  <Text style={[styles.blockTitle, { color: theme.text }]}>Cuenta destino</Text>
-                  <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
-                    A dónde llega: otra cuenta, una tarjeta, una inversión o una deuda.
-                  </Text>
-                  {destinationAccounts.length === 0 ? (
-                    <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
-                      Agrega otra cuenta para elegir el destino.
-                    </Text>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-                      {destinationAccounts.map((account) => (
-                        <Pressable
-                          key={account.id}
-                          style={[
-                            styles.chip,
-                            { borderColor: theme.border },
-                            destinationAccountId === account.id && {
-                              borderColor: theme.primary,
-                              backgroundColor: `${theme.primary}20`,
-                            },
-                          ]}
-                          onPress={() => setDestinationAccountId(account.id)}
-                        >
-                          <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  )}
                 </>
               ) : null}
 
@@ -955,10 +1091,12 @@ export function QuickAddTransactionModal({
                   <Text style={[styles.dateInput, { color: theme.text }]}>{formatDateLabel(selectedDate)}</Text>
                 </Pressable>
               </View>
+              </>
+              ) : null}
             </ScrollView>
           )}
 
-          {step === 'amount' ? (
+          {step === 'amount' && showAmountEntry ? (
           <Animated.View
             pointerEvents={keyboardVisible ? 'none' : 'auto'}
             style={[
@@ -1100,6 +1238,14 @@ export function QuickAddTransactionModal({
             </Pressable>
           </Pressable>
         </Modal>
+        <ConfirmModal
+          open={categoryDeleteOpen}
+          title="Eliminar categoría"
+          message={`¿Eliminar “${category}”? Los movimientos que ya la usan conservan el nombre.`}
+          confirmLabel="Eliminar"
+          onCancel={() => setCategoryDeleteOpen(false)}
+          onConfirm={deleteSelectedCategory}
+        />
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -1109,11 +1255,16 @@ export function QuickAddTransactionModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#00000066',
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
   },
   keyboardWrap: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  backdropSpacer: {
+    flexGrow: 1,
+    flexShrink: 0,
+    minHeight: 56,
   },
   modalCard: {
     borderTopLeftRadius: 20,
@@ -1158,27 +1309,98 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
-  categoryBox: {
-    width: 92,
+  transferPair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  transferSlot: {
+    flex: 1,
+    minHeight: 148,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
     gap: 6,
   },
-  categoryBoxIcon: {
+  transferIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transferKind: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  transferName: {
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  transferBalance: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  transferPicker: {
+    marginBottom: 8,
+  },
+  transferOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  transferOptionIcon: {
     width: 36,
     height: 36,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  transferOptionBody: {
+    flex: 1,
+  },
+  transferOptionName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  categoryBox: {
+    maxWidth: '52%',
+    flexShrink: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    gap: 6,
+    overflow: 'hidden',
+  },
+  categoryBoxIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBoxLabelWrap: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
   categoryBoxLabel: {
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'center',
     lineHeight: 15,
   },
   amountCard: {
@@ -1188,7 +1410,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     justifyContent: 'center',
-    minHeight: 92,
   },
   conversionHint: {
     fontSize: 11,
@@ -1203,7 +1424,7 @@ const styles = StyleSheet.create({
   currencyBadge: {
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   currencyBadgeText: {
     fontWeight: '800',
@@ -1211,9 +1432,15 @@ const styles = StyleSheet.create({
   },
   modalCardCategory: {
     height: '86%',
+    flexShrink: 1,
   },
   modalCardAmount: {
     height: '92%',
+    flexShrink: 1,
+  },
+  modalCardTransferPick: {
+    height: '72%',
+    flexShrink: 1,
   },
   stepScroll: {
     flex: 1,
@@ -1230,10 +1457,6 @@ const styles = StyleSheet.create({
   bannerHint: {
     fontSize: 12,
     marginTop: 2,
-  },
-  backdropPressable: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
   },
   modalTitle: { fontWeight: '800', fontSize: 22 },
   scrollContent: {
@@ -1254,8 +1477,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   amountInput: {
-    paddingVertical: 4,
-    fontSize: 30,
+    paddingVertical: 0,
+    fontSize: 26,
     fontWeight: '800',
     textAlign: 'right',
   },

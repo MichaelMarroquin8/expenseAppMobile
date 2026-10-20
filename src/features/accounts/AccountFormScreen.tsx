@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchQuote } from '../../backend/marketQuotes';
-import { PremiumCard, Screen } from '../../components/ui';
+import { ConfirmModal, PremiumCard, Screen } from '../../components/ui';
 import { CURRENCIES, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
@@ -87,6 +87,7 @@ export function AccountFormScreen() {
   const [priceUpdatedAt, setPriceUpdatedAt] = useState(existing?.priceUpdatedAt);
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [fetchingPrice, setFetchingPrice] = useState(false);
 
   const investmentMode = isInvestmentKind(kind);
@@ -195,18 +196,8 @@ export function AccountFormScreen() {
 
   const confirmDelete = useCallback(() => {
     if (!existing) return;
-    Alert.alert('Eliminar cuenta', `¿Eliminar “${existing.name}”?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: () => {
-          deleteAccount(existing.id);
-          navigation.goBack();
-        },
-      },
-    ]);
-  }, [deleteAccount, existing, navigation]);
+    setDeleteOpen(true);
+  }, [existing]);
 
   const saveRef = useRef(save);
   const deleteRef = useRef(confirmDelete);
@@ -465,7 +456,8 @@ export function AccountFormScreen() {
 
       <Modal visible={kindPickerOpen} animationType="slide" transparent onRequestClose={() => setKindPickerOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setKindPickerOpen(false)}>
-          <View style={[styles.modalSheet, { backgroundColor: theme.surface }]}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.modalHandle, { backgroundColor: theme.border }]} />
             <Text style={[styles.modalTitle, { color: theme.text }]}>Tipo de cuenta</Text>
             <ScrollView>
               {ACCOUNT_KIND_OPTIONS.map((item) => (
@@ -498,7 +490,13 @@ export function AccountFormScreen() {
         onRequestClose={() => setCurrencyPickerOpen(false)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setCurrencyPickerOpen(false)}>
-          <View style={[styles.modalSheet, { backgroundColor: theme.surface, maxHeight: '70%' }]}>
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: theme.surface, borderColor: theme.border, maxHeight: '70%' },
+            ]}
+          >
+            <View style={[styles.modalHandle, { backgroundColor: theme.border }]} />
             <Text style={[styles.modalTitle, { color: theme.text }]}>Moneda</Text>
             <ScrollView>
               {CURRENCIES.slice(0, 40).map((item) => (
@@ -519,6 +517,20 @@ export function AccountFormScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="Eliminar cuenta"
+        message={existing ? `¿Eliminar “${existing.name}”?` : ''}
+        confirmLabel="Eliminar"
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => {
+          if (!existing) return;
+          deleteAccount(existing.id);
+          setDeleteOpen(false);
+          navigation.goBack();
+        }}
+      />
     </Screen>
   );
 }
@@ -591,15 +603,23 @@ const styles = StyleSheet.create({
   headerIconBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: 16,
+    borderTopWidth: 1,
+    paddingTop: 10,
     paddingBottom: 28,
     maxHeight: '60%',
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 12,
   },
   modalTitle: { fontSize: 16, fontWeight: '800', paddingHorizontal: 16, marginBottom: 8 },
   modalItem: {

@@ -1,7 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { parseSms, isLikelyDuplicate, SmsRawInput } from '../domain/smsParser';
+import {
+  parseSms,
+  isLikelyDuplicate,
+  isSameAmountAndInstant,
+  matchesSavedMovement,
+  reconcileDetections,
+  SmsRawInput,
+} from '../domain/smsParser';
 import {
   NotificationRawInput,
   parseWalletNotification,
@@ -66,18 +73,6 @@ const sanitizeAccount = (raw: unknown): FinanceAccount | null => {
   };
 };
 
-const hasMatchingTransaction = (detection: SmsDetection, transactions: Transaction[]): boolean =>
-  transactions.some((tx) => {
-    if (tx.detectionId && tx.detectionId === detection.id) return true;
-    if (!detection.amount || !detection.occurredAt) return false;
-    const sameAmount = Math.abs(tx.amount - detection.amount) < 0.01;
-    const sameDay =
-      new Date(tx.occurredAt).toDateString() === new Date(detection.occurredAt).toDateString();
-    const sameMerchant =
-      detection.merchant && tx.merchant.toLowerCase().includes(detection.merchant.toLowerCase());
-    return sameAmount && sameDay && Boolean(sameMerchant);
-  });
-
 const mergeDetections = (
   incoming: SmsDetection[],
   existing: SmsDetection[],
@@ -87,23 +82,18 @@ const mergeDetections = (
   const processedIncoming = incoming.map((item) => {
     const prev = existingMap.get(item.id);
     if (!prev) return item;
-    // Si ya fue aceptado y su transacción sigue activa, conservar estado aceptado para no duplicar en auto-sync.
-    // Si la transacción fue eliminada, permitir que vuelva a 'pending' y sin bloqueo de duplicado.
-    if (prev.status === 'accepted' && hasMatchingTransaction(prev, transactions)) {
-      return prev;
-    }
-    return {
-      ...item,
-      status: 'pending' as const,
-      duplicate: hasMatchingTransaction(item, transactions),
-    };
+    // Descartado se queda descartado: el mismo SMS no vuelve a pedir aprobación en cada sync.
+    if (prev.status === 'discarded') return prev;
+    // Aceptado solo sigue oculto si el gasto sigue en el registro (mismo aviso, o mismo monto y hora).
+    if (prev.status === 'accepted' && matchesSavedMovement(prev, transactions)) return prev;
+    return { ...item, status: 'pending' as const, duplicate: false };
   });
 
   const merged = [...processedIncoming, ...existing];
   const unique = merged.filter(
     (item, index) => merged.findIndex((other) => other.id === item.id) === index,
   );
-  return unique.slice(0, 80);
+  return reconcileDetections(unique, transactions).slice(0, 80);
 };
 
 export type CategoryKind = 'expense' | 'income';
@@ -269,10 +259,14 @@ export const useFinanceStore = create<FinanceState>()(
       settings: initialSettings,
       finishOnboarding: () => set({ onboardingDone: true }),
       addTransaction: (payload) =>
-        set((state) => ({
-          transactions: [{ ...payload, id: createId('tx') }, ...state.transactions],
-          accounts: applyAccountMovement(state.accounts, payload, 'apply'),
-        })),
+        set((state) => {
+          const transactions = [{ ...payload, id: createId('tx') }, ...state.transactions];
+          return {
+            transactions,
+            accounts: applyAccountMovement(state.accounts, payload, 'apply'),
+            smsDetections: reconcileDetections(state.smsDetections, transactions),
+          };
+        }),
       addTransactionCategory: (category, kind = 'expense') =>
         set((state) => {
           const normalized = category.trim();
@@ -336,9 +330,11 @@ export const useFinanceStore = create<FinanceState>()(
           const updated: Transaction = { ...existing, ...payload };
           const revertedAccounts = applyAccountMovement(state.accounts, existing, 'revert');
           const nextAccounts = applyAccountMovement(revertedAccounts, updated, 'apply');
+          const transactions = state.transactions.map((tx) => (tx.id === id ? updated : tx));
           return {
-            transactions: state.transactions.map((tx) => (tx.id === id ? updated : tx)),
+            transactions,
             accounts: nextAccounts,
+            smsDetections: reconcileDetections(state.smsDetections, transactions),
           };
         }),
       deleteTransaction: (id) =>
@@ -346,34 +342,18 @@ export const useFinanceStore = create<FinanceState>()(
           const target = state.transactions.find((tx) => tx.id === id);
           if (!target) return state;
           const remainingTransactions = state.transactions.filter((tx) => tx.id !== id);
-          const nextDetections = state.smsDetections.map((det) => {
-            const matchesDeleted =
-              (target.detectionId && det.id === target.detectionId) ||
-              (target.source !== 'manual' &&
-                det.status === 'accepted' &&
-                det.amount !== undefined &&
-                Math.abs(det.amount - target.amount) < 0.01 &&
-                det.merchant === target.merchant);
-
-            if (matchesDeleted) {
-              const reopened: SmsDetection = { ...det, status: 'pending', duplicate: false };
-              return {
-                ...reopened,
-                duplicate: hasMatchingTransaction(reopened, remainingTransactions),
-              };
-            }
-            if (det.status === 'pending') {
-              return {
-                ...det,
-                duplicate: hasMatchingTransaction(det, remainingTransactions),
-              };
-            }
-            return det;
+          const reopened = state.smsDetections.map((det) => {
+            const linkedById = Boolean(target.detectionId && det.id === target.detectionId);
+            const linkedByInstant =
+              target.type !== 'income' && det.status !== 'pending' && isSameAmountAndInstant(det, target);
+            if (!(linkedById || linkedByInstant)) return det;
+            if (matchesSavedMovement(det, remainingTransactions)) return det;
+            return { ...det, status: 'pending' as const, duplicate: false };
           });
           return {
             transactions: remainingTransactions,
             accounts: applyAccountMovement(state.accounts, target, 'revert'),
-            smsDetections: nextDetections,
+            smsDetections: reconcileDetections(reopened, remainingTransactions),
           };
         }),
       setBudget: (budget) =>
@@ -454,14 +434,10 @@ export const useFinanceStore = create<FinanceState>()(
         }),
       updateSmsDetection: (detectionId, payload) =>
         set((state) => ({
-          smsDetections: state.smsDetections.map((item) => {
-            if (item.id !== detectionId) return item;
-            const updated: SmsDetection = { ...item, ...payload };
-            return {
-              ...updated,
-              duplicate: hasMatchingTransaction(updated, state.transactions),
-            };
-          }),
+          smsDetections: reconcileDetections(
+            state.smsDetections.map((item) => (item.id === detectionId ? { ...item, ...payload } : item)),
+            state.transactions,
+          ),
         })),
       acceptSms: (detectionId, explicitAccountId) =>
         set((state) => {
@@ -506,20 +482,30 @@ export const useFinanceStore = create<FinanceState>()(
             detectionId: detection.id,
           };
 
+          const nextTransactions = [transaction, ...state.transactions];
           return {
-            transactions: [transaction, ...state.transactions],
+            transactions: nextTransactions,
             accounts: applyAccountMovement(state.accounts, transaction, 'apply'),
-            smsDetections: state.smsDetections.map((item) =>
-              item.id === detectionId ? { ...item, status: 'accepted', duplicate: false } : item,
+            smsDetections: reconcileDetections(
+              state.smsDetections.map((item) =>
+                item.id === detectionId ? { ...item, status: 'accepted' as const, duplicate: false } : item,
+              ),
+              nextTransactions,
             ),
           };
         }),
       discardSms: (detectionId) =>
-        set((state) => ({
-          smsDetections: state.smsDetections.map((item) =>
-            item.id === detectionId ? { ...item, status: 'discarded' } : item,
-          ),
-        })),
+        set((state) => {
+          const target = state.smsDetections.find((item) => item.id === detectionId);
+          const next = state.smsDetections.map((item) => {
+            if (item.id === detectionId) return { ...item, status: 'discarded' as const, duplicate: false };
+            if (target && item.status === 'pending' && isSameAmountAndInstant(item, target)) {
+              return { ...item, status: 'discarded' as const, duplicate: false };
+            }
+            return item;
+          });
+          return { smsDetections: reconcileDetections(next, state.transactions) };
+        }),
       updateSettings: (partial) =>
         set((state) => {
           const next = { ...state.settings, ...partial };
@@ -594,9 +580,18 @@ export const useFinanceStore = create<FinanceState>()(
             ? persisted.incomeCategories
             : currentState.incomeCategories;
 
+        const persistedTransactions = Array.isArray(persisted.transactions)
+          ? persisted.transactions
+          : currentState.transactions;
+        const persistedDetections = Array.isArray(persisted.smsDetections)
+          ? reconcileDetections(persisted.smsDetections, persistedTransactions)
+          : currentState.smsDetections;
+
         return {
           ...currentState,
           ...persisted,
+          transactions: persistedTransactions,
+          smsDetections: persistedDetections,
           onboardingDone: coerceBoolean(persisted.onboardingDone, currentState.onboardingDone),
           transactionCategories:
             rawExpenseCategories.length > 0 ? rawExpenseCategories : currentState.transactionCategories,

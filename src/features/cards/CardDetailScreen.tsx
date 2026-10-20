@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { ConfirmModal, PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatMoney, formatShortDate } from '../../core/utils/format';
 import { cardAvailable, cardDebt, cardMovements, firstLiquidAccountId, linkedAccount } from '../../domain/cardLedger';
@@ -23,6 +23,7 @@ export function CardDetailScreen() {
   const transactions = useFinanceStore((state) => state.transactions);
   const deleteCard = useFinanceStore((state) => state.deleteCard);
   const [payOpen, setPayOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const card = cards.find((item) => item.id === route.params.cardId);
   if (!card) {
@@ -41,20 +42,6 @@ export function CardDetailScreen() {
   const movements = cardMovements(card, transactions);
   const payFromId = firstLiquidAccountId(accounts, card.accountId);
   const canPay = card.cardType === 'credit' && !!card.accountId && !!payFromId;
-
-  const confirmDelete = () => {
-    Alert.alert('Eliminar tarjeta', `¿Eliminar “${card.alias}”? La cuenta y sus movimientos se conservan.`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: () => {
-          deleteCard(card.id);
-          navigation.goBack();
-        },
-      },
-    ]);
-  };
 
   return (
     <Screen>
@@ -132,7 +119,7 @@ export function CardDetailScreen() {
           })
         )}
 
-        <Pressable onPress={confirmDelete} style={styles.deleteBtn}>
+        <Pressable onPress={() => setDeleteOpen(true)} style={styles.deleteBtn}>
           <Text style={{ color: theme.danger, fontWeight: '700' }}>Eliminar tarjeta</Text>
         </Pressable>
       </ScrollView>
@@ -146,6 +133,19 @@ export function CardDetailScreen() {
           presetDestinationAccountId={card.accountId}
         />
       ) : null}
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="Eliminar tarjeta"
+        message={`¿Eliminar “${card.alias}”? La cuenta y sus movimientos se conservan.`}
+        confirmLabel="Eliminar"
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => {
+          deleteCard(card.id);
+          setDeleteOpen(false);
+          navigation.goBack();
+        }}
+      />
     </Screen>
   );
 }

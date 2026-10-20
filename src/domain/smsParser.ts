@@ -211,26 +211,87 @@ export const parseSms = (input: SmsRawInput): Omit<SmsDetection, 'status' | 'dup
   };
 };
 
+const minuteKey = (iso?: string): string | undefined => {
+  if (!iso) return undefined;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+/** Mismo monto y mismo minuto. El nombre del comercio no participa. */
+export const isSameAmountAndInstant = (
+  left: { amount?: number; occurredAt?: string },
+  right: { amount?: number; occurredAt?: string },
+): boolean => {
+  if (left.amount == null || right.amount == null || !left.occurredAt || !right.occurredAt) return false;
+  if (!Number.isFinite(left.amount) || !Number.isFinite(right.amount)) return false;
+  if (Math.abs(left.amount - right.amount) >= 0.01) return false;
+  const leftMinute = minuteKey(left.occurredAt);
+  const rightMinute = minuteKey(right.occurredAt);
+  return Boolean(leftMinute && leftMinute === rightMinute);
+};
+
+const instantKey = (amount?: number, occurredAt?: string): string | undefined => {
+  if (amount == null || !Number.isFinite(amount)) return undefined;
+  const minute = minuteKey(occurredAt);
+  if (!minute) return undefined;
+  return `${Math.round(amount * 100)}@${minute}`;
+};
+
+/** El gasto ya está en el registro: mismo aviso, o mismo monto y misma hora, sin mirar el comercio. */
+export const matchesSavedMovement = (
+  candidate: Pick<SmsDetection, 'id' | 'amount' | 'occurredAt'>,
+  transactions: Transaction[],
+): boolean =>
+  transactions.some((tx) => {
+    if (!tx || typeof tx.amount !== 'number' || typeof tx.occurredAt !== 'string') {
+      return Boolean(tx && tx.detectionId && tx.detectionId === candidate.id);
+    }
+    if (tx.detectionId && tx.detectionId === candidate.id) return true;
+    if (tx.type === 'income') return false;
+    return isSameAmountAndInstant(tx, candidate);
+  });
+
 export const isLikelyDuplicate = (
   candidate: SmsDetection,
   existingTransactions: Transaction[],
   existingDetections: SmsDetection[],
 ): boolean => {
-  const samePendingDetection = existingDetections.some(
-    (item) => item.id === candidate.id && item.status === 'pending',
+  const alreadyOpen = existingDetections.some(
+    (item) => item.id === candidate.id && item.status !== 'discarded',
   );
-  if (samePendingDetection) return true;
+  if (alreadyOpen) return true;
+  if (matchesSavedMovement(candidate, existingTransactions)) return true;
 
-  const sameTransaction = existingTransactions.some((tx) => {
-    if (tx.detectionId && tx.detectionId === candidate.id) return true;
-    if (!candidate.amount || !candidate.occurredAt) return false;
-    const sameAmount = Math.abs(tx.amount - candidate.amount) < 0.01;
-    const sameDay =
-      new Date(tx.occurredAt).toDateString() === new Date(candidate.occurredAt).toDateString();
-    const sameMerchant =
-      candidate.merchant && tx.merchant.toLowerCase().includes(candidate.merchant.toLowerCase());
-    return sameAmount && sameDay && Boolean(sameMerchant);
+  return existingDetections.some(
+    (item) => item.id !== candidate.id && isSameAmountAndInstant(item, candidate),
+  );
+};
+
+/**
+ * Deja visible un solo pendiente por monto+minuto.
+ * Si ese gasto ya está guardado, o ya se descartó, el resto queda marcado como duplicado y no se pide de nuevo.
+ */
+export const reconcileDetections = (
+  detections: SmsDetection[],
+  transactions: Transaction[],
+): SmsDetection[] => {
+  const blocked = new Set<string>();
+  for (const item of detections) {
+    if (item.status !== 'discarded') continue;
+    const key = instantKey(item.amount, item.occurredAt);
+    if (key) blocked.add(key);
+  }
+
+  const seenPending = new Set<string>();
+  return detections.map((item) => {
+    if (item.status !== 'pending') return { ...item, duplicate: false };
+
+    const key = instantKey(item.amount, item.occurredAt);
+    const saved = matchesSavedMovement(item, transactions);
+    const repeated = Boolean(key && (blocked.has(key) || seenPending.has(key)));
+    if (key) seenPending.add(key);
+    return { ...item, duplicate: saved || repeated };
   });
-
-  return sameTransaction;
 };

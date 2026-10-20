@@ -135,8 +135,7 @@ export function InsightsScreen() {
   const periodOptions = useMemo(() => {
     const now = new Date();
     if (periodMode === 'month') {
-      return Array.from({ length: 6 }, (_, index) => {
-        const offset = 5 - index;
+      return Array.from({ length: 6 }, (_, offset) => {
         const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
         return {
           id: monthKey(date),
@@ -150,8 +149,7 @@ export function InsightsScreen() {
         };
       });
     }
-    return Array.from({ length: 4 }, (_, index) => {
-      const offset = 3 - index;
+    return Array.from({ length: 4 }, (_, offset) => {
       const year = now.getFullYear() - offset;
       return {
         id: String(year),
