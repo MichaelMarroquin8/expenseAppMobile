@@ -1,7 +1,17 @@
 import { User, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { FinanceCloudSnapshot, loadCloudRecord, loadCloudSnapshot, saveCloudSnapshot } from '../../backend/cloudSync';
+import {
+  cacheCloudTransactions,
+  clearCloudTransactionCache,
+  FinanceCloudSnapshot,
+  loadCloudRecord,
+  loadCloudTransactions,
+  saveCloudSnapshot,
+  StoredFinanceSnapshot,
+  syncCloudTransactions,
+} from '../../backend/cloudSync';
 import { firebaseAuth, firebaseDb, isFirebaseConfigured } from '../../backend/firebase';
+import { Transaction } from '../../domain/models';
 import { reconcileDetections } from '../../domain/smsParser';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
@@ -65,7 +75,6 @@ const extractSnapshot = (): FinanceCloudSnapshot => {
   const state = useFinanceStore.getState();
   return {
     onboardingDone: state.onboardingDone,
-    transactions: state.transactions,
     transactionCategories: state.transactionCategories,
     incomeCategories: state.incomeCategories,
     categoryIcons: state.categoryIcons,
@@ -76,6 +85,17 @@ const extractSnapshot = (): FinanceCloudSnapshot => {
     smsDetections: state.smsDetections,
     settings: state.settings,
   };
+};
+
+const legacyTransactions = (snapshot: StoredFinanceSnapshot | null): Transaction[] => {
+  if (!snapshot || !Array.isArray(snapshot.transactions)) return [];
+  return snapshot.transactions.filter((item) => item && typeof item.id === 'string');
+};
+
+const profileOf = (snapshot: StoredFinanceSnapshot): FinanceCloudSnapshot => {
+  const profile = { ...snapshot };
+  delete profile.transactions;
+  return profile;
 };
 
 const sortValue = (value: unknown): unknown => {
@@ -96,12 +116,11 @@ const sortById = <T extends { id: string }>(list: T[] | undefined): T[] =>
     .filter((item) => item && typeof item.id === 'string')
     .sort((left, right) => left.id.localeCompare(right.id));
 
-const snapshotsMatch = (cloud: FinanceCloudSnapshot | null, local: FinanceCloudSnapshot): boolean => {
+const snapshotsMatch = (cloud: StoredFinanceSnapshot | null, local: FinanceCloudSnapshot): boolean => {
   if (!cloud) return false;
   const normalize = (snapshot: FinanceCloudSnapshot) =>
     sortValue({
       ...snapshot,
-      transactions: sortById(snapshot.transactions),
       accounts: sortById(snapshot.accounts),
       budgets: sortById(snapshot.budgets),
       goals: sortById(snapshot.goals),
@@ -110,8 +129,11 @@ const snapshotsMatch = (cloud: FinanceCloudSnapshot | null, local: FinanceCloudS
       transactionCategories: [...(snapshot.transactionCategories ?? [])].sort((a, b) => a.localeCompare(b)),
       incomeCategories: [...(snapshot.incomeCategories ?? [])].sort((a, b) => a.localeCompare(b)),
     });
-  return JSON.stringify(normalize(cloud)) === JSON.stringify(normalize(local));
+  return JSON.stringify(normalize(profileOf(cloud))) === JSON.stringify(normalize(local));
 };
+
+const transactionsMatch = (cloud: Transaction[], local: Transaction[]): boolean =>
+  JSON.stringify(sortValue(sortById(cloud))) === JSON.stringify(sortValue(sortById(local)));
 
 const syncErrorMessage = (error: unknown): string => {
   const code =
@@ -130,36 +152,36 @@ const syncErrorMessage = (error: unknown): string => {
   return 'No se pudo sincronizar con la nube.';
 };
 
-const applyCloudMerge = (cloud: FinanceCloudSnapshot) => {
+const applyCloudMerge = (cloud: StoredFinanceSnapshot | null, transactions: Transaction[]) => {
   const current = useFinanceStore.getState();
-  const mergedTransactions = mergeById(cloud.transactions, current.transactions).sort(
+  const mergedTransactions = mergeById(transactions, current.transactions).sort(
     (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
   );
-  const mergedExpenseCategories = mergeStringLists(cloud.transactionCategories, current.transactionCategories, [
+  const mergedExpenseCategories = mergeStringLists(cloud?.transactionCategories, current.transactionCategories, [
     'Salario',
   ]);
-  const mergedIncomeCategories = mergeStringLists(cloud.incomeCategories, current.incomeCategories);
+  const mergedIncomeCategories = mergeStringLists(cloud?.incomeCategories, current.incomeCategories);
   useFinanceStore.setState({
-    onboardingDone: Boolean(cloud.onboardingDone || current.onboardingDone),
+    onboardingDone: Boolean(cloud?.onboardingDone || current.onboardingDone),
     transactions: mergedTransactions,
     transactionCategories: mergedExpenseCategories.length > 0 ? mergedExpenseCategories : current.transactionCategories,
     incomeCategories: mergedIncomeCategories.length > 0 ? mergedIncomeCategories : current.incomeCategories,
-    categoryIcons: {
-      ...current.categoryIcons,
-      ...(cloud.categoryIcons ?? {}),
-    },
-    accounts: mergeById(cloud.accounts, current.accounts),
-    budgets: mergeById(cloud.budgets, current.budgets),
-    goals: mergeById(cloud.goals, current.goals),
-    cards: mergeById(cloud.cards, current.cards),
-    smsDetections: reconcileDetections(mergeById(cloud.smsDetections, current.smsDetections), mergedTransactions).slice(
-      0,
-      80,
-    ),
-    settings: {
-      ...current.settings,
-      ...(cloud.settings ?? {}),
-    },
+            categoryIcons: {
+              ...current.categoryIcons,
+              ...(cloud?.categoryIcons ?? {}),
+            },
+            accounts: mergeById(cloud?.accounts, current.accounts),
+            budgets: mergeById(cloud?.budgets, current.budgets),
+            goals: mergeById(cloud?.goals, current.goals),
+            cards: mergeById(cloud?.cards, current.cards),
+            smsDetections: reconcileDetections(
+              mergeById(cloud?.smsDetections, current.smsDetections),
+              mergedTransactions,
+            ).slice(0, 80),
+            settings: {
+              ...current.settings,
+              ...(cloud?.settings ?? {}),
+            },
   });
 };
 
@@ -186,6 +208,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSyncError(syncErrorMessage(error));
   }, []);
 
+  const persistCloud = useCallback(async (uid: string) => {
+    await saveCloudSnapshot(uid, extractSnapshot());
+    await syncCloudTransactions(uid, useFinanceStore.getState().transactions);
+  }, []);
+
   const checkAndSync = useCallback(async () => {
     const currentUser = userRef.current;
     if (!currentUser) {
@@ -206,12 +233,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null);
     try {
       const record = await loadCloudRecord(currentUser.uid);
-      const local = extractSnapshot();
-      if (record?.snapshot && snapshotsMatch(record.snapshot, local)) {
+      const remoteTransactions = await loadCloudTransactions(currentUser.uid);
+      cacheCloudTransactions(currentUser.uid, remoteTransactions);
+      const cloudTransactions = mergeById(remoteTransactions, legacyTransactions(record?.snapshot ?? null));
+      const localTransactions = useFinanceStore.getState().transactions;
+      const legacyEmbedded = Array.isArray(record?.snapshot?.transactions);
+      if (
+        record?.snapshot &&
+        !legacyEmbedded &&
+        snapshotsMatch(record.snapshot, extractSnapshot()) &&
+        transactionsMatch(cloudTransactions, localTransactions)
+      ) {
         markSynced(record.updatedAtMs ?? Date.now());
         return;
       }
-      await saveCloudSnapshot(currentUser.uid, local);
+      await persistCloud(currentUser.uid);
       if (syncGenRef.current === startGen) markSynced(Date.now());
     } catch (error) {
       markSyncError(error);
@@ -224,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
         syncTimerRef.current = setTimeout(() => {
           if (syncPausedRef.current || syncGenRef.current !== gen) return;
-          saveCloudSnapshot(uid, extractSnapshot())
+          persistCloud(uid)
             .then(() => {
               if (syncGenRef.current !== gen) return;
               markSynced(Date.now());
@@ -236,7 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }, 900);
       }
     }
-  }, [markSyncError, markSynced]);
+  }, [markSyncError, markSynced, persistCloud]);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseAuth) {
@@ -247,6 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsub = onAuthStateChanged(firebaseAuth, async (nextUser) => {
       setUser(nextUser);
       if (!nextUser) {
+        clearCloudTransactionCache();
         setSyncStatus('unknown');
         setSyncError(null);
         setLastSyncedAt(null);
@@ -258,9 +295,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus('checking');
       setSyncError(null);
       try {
-        const cloud = await loadCloudSnapshot(nextUser.uid);
-        if (cloud) applyCloudMerge(cloud);
-        await saveCloudSnapshot(nextUser.uid, extractSnapshot());
+        const record = await loadCloudRecord(nextUser.uid);
+        const remoteTransactions = await loadCloudTransactions(nextUser.uid);
+        cacheCloudTransactions(nextUser.uid, remoteTransactions);
+        const cloudTransactions = mergeById(remoteTransactions, legacyTransactions(record?.snapshot ?? null));
+        if (record?.snapshot || cloudTransactions.length > 0) {
+          applyCloudMerge(record?.snapshot ?? null, cloudTransactions);
+        }
+        await persistCloud(nextUser.uid);
         markSynced(Date.now());
       } catch (error) {
         markSyncError(error);
@@ -271,7 +313,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsub();
-  }, [markSyncError, markSynced]);
+  }, [markSyncError, markSynced, persistCloud]);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !user) return;
@@ -284,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       syncTimerRef.current = setTimeout(() => {
         if (syncPausedRef.current || syncGenRef.current !== gen) return;
-        saveCloudSnapshot(user.uid, extractSnapshot())
+        persistCloud(user.uid)
           .then(() => {
             if (syncGenRef.current !== gen) return;
             markSynced(Date.now());
@@ -299,7 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsub();
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
-  }, [markSyncError, markSynced, user]);
+  }, [markSyncError, markSynced, persistCloud, user]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

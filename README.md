@@ -1,5 +1,5 @@
 # expenseAppMobile
 
 cd android && ./gradlew assembleDebu
-$ ./gradlew assembleRelease
+$ cd android && ./gradlew assembleRelease
 $ ./gradlew

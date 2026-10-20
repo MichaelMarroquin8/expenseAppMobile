@@ -4,20 +4,23 @@ rules_version = '2';
 // Assumed Data Model
 // ===============================================================
 //
-// Collection: users/{userId}/finance
-// Document ID: main
-// Fields:
-//   - snapshot: map (required) - copia local de finanzas del usuario
+// users/{userId}/finance/main
+//   - snapshot: map (required)
 //       onboardingDone: bool
-//       transactions, transactionCategories, accounts, budgets, goals,
-//       cards, smsDetections: list
+//       transactionCategories, accounts, budgets, goals, cards, smsDetections
 //       incomeCategories: list (optional)
 //       categoryIcons, settings: map
+//       Los movimientos NO van aquí.
 //   - updatedAt: timestamp (required) - serverTimestamp()
-//   - schemaVersion: int (required, solo 1)
+//   - schemaVersion: int (required, 2)
 //
-// No hay otras colecciones. El cliente hace get y set con merge
-// en users/{uid}/finance/main. Sin consultas where/orderBy/limit.
+// users/{userId}/transactions/{transactionId}
+//   Un documento por movimiento. El id del documento es transaction.id.
+//   Campos requeridos: id, type, amount, currency, category, tags,
+//   paymentMethod, merchant, occurredAt, recurring, source.
+//
+// El cliente lee la subcolección completa (getDocs, sin where/orderBy)
+// y escribe solo los movimientos que cambiaron, en lotes.
 //
 // ===============================================================
 
@@ -31,17 +34,20 @@ service cloud.firestore {
       return value is list && value.size() <= maxSize;
     }
 
+    function isValidString(value, maxSize) {
+      return value is string && value.size() <= maxSize;
+    }
+
     function isValidFinanceDoc() {
       let data = request.resource.data;
       let snapshot = data.snapshot;
       return data.keys().hasOnly(['snapshot', 'updatedAt', 'schemaVersion'])
-        && data.schemaVersion is int
-        && data.schemaVersion == 1
+        && data.schemaVersion == 2
         && data.updatedAt == request.time
         && snapshot is map
+        && !('transactions' in snapshot)
         && snapshot.keys().hasAll([
           'onboardingDone',
-          'transactions',
           'transactionCategories',
           'categoryIcons',
           'accounts',
@@ -52,7 +58,6 @@ service cloud.firestore {
           'settings'
         ])
         && snapshot.onboardingDone is bool
-        && isValidList(snapshot.transactions, 10000)
         && isValidList(snapshot.transactionCategories, 300)
         && (!('incomeCategories' in snapshot) || isValidList(snapshot.incomeCategories, 300))
         && snapshot.categoryIcons is map
@@ -64,10 +69,44 @@ service cloud.firestore {
         && snapshot.settings is map;
     }
 
+    function isValidTransaction(txId) {
+      let data = request.resource.data;
+      return data.keys().size() <= 24
+        && data.id == txId
+        && data.type in ['income', 'expense', 'transfer']
+        && data.amount is number
+        && isValidString(data.currency, 4)
+        && data.currency.size() >= 3
+        && isValidString(data.category, 80)
+        && data.category.size() > 0
+        && isValidList(data.tags, 20)
+        && data.paymentMethod in ['cash', 'transfer', 'card', 'wallet']
+        && isValidString(data.merchant, 200)
+        && isValidString(data.occurredAt, 40)
+        && data.recurring is bool
+        && data.source in ['manual', 'sms', 'notification']
+        && (!('note' in data) || isValidString(data.note, 2000))
+        && (!('subcategory' in data) || isValidString(data.subcategory, 80))
+        && (!('originalAmount' in data) || data.originalAmount is number)
+        && (!('originalCurrency' in data) || isValidString(data.originalCurrency, 4))
+        && (!('exchangeRate' in data) || data.exchangeRate is number)
+        && (!('cardId' in data) || isValidString(data.cardId, 80))
+        && (!('accountId' in data) || isValidString(data.accountId, 80))
+        && (!('destinationAccountId' in data) || isValidString(data.destinationAccountId, 80))
+        && (!('detectionId' in data) || isValidString(data.detectionId, 80))
+        && (!('recurringRule' in data) || data.recurringRule in ['daily', 'weekly', 'monthly']);
+    }
+
     match /users/{userId}/finance/main {
       allow read: if isOwner(userId);
       allow create, update: if isOwner(userId) && isValidFinanceDoc();
       allow delete: if false;
+    }
+
+    match /users/{userId}/transactions/{txId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidTransaction(txId);
+      allow delete: if isOwner(userId);
     }
   }
 }
