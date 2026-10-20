@@ -43,6 +43,18 @@ const AuthContext = createContext<AuthContextValue>({
   signOutCurrent: async () => {},
 });
 
+const waitForLocalHydration = () =>
+  new Promise<void>((resolve) => {
+    if (useFinanceStore.persist.hasHydrated()) {
+      resolve();
+      return;
+    }
+    const unsub = useFinanceStore.persist.onFinishHydration(() => {
+      unsub();
+      resolve();
+    });
+  });
+
 const mergeById = <T extends { id: string }>(cloudList: T[] | undefined, localList: T[]): T[] => {
   const safeCloud = Array.isArray(cloudList) ? cloudList : [];
   const map = new Map<string, T>();
@@ -232,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSyncStatus('checking');
     setSyncError(null);
     try {
+      await waitForLocalHydration();
       const record = await loadCloudRecord(currentUser.uid);
       const remoteTransactions = await loadCloudTransactions(currentUser.uid);
       cacheCloudTransactions(currentUser.uid, remoteTransactions);
@@ -247,6 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         markSynced(record.updatedAtMs ?? Date.now());
         return;
       }
+      applyCloudMerge(record?.snapshot ?? null, cloudTransactions);
       await persistCloud(currentUser.uid);
       if (syncGenRef.current === startGen) markSynced(Date.now());
     } catch (error) {
@@ -295,6 +309,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus('checking');
       setSyncError(null);
       try {
+        await waitForLocalHydration();
         const record = await loadCloudRecord(nextUser.uid);
         const remoteTransactions = await loadCloudTransactions(nextUser.uid);
         cacheCloudTransactions(nextUser.uid, remoteTransactions);

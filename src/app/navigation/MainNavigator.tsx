@@ -7,7 +7,7 @@ import {
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DashboardScreen } from "../../features/dashboard/DashboardScreen";
 import { TransactionsScreen } from "../../features/transactions/TransactionsScreen";
@@ -72,9 +72,39 @@ function Tabs() {
             pressColor: _pressColor,
             pressOpacity: _pressOpacity,
             hoverEffect: _hoverEffect,
+            onPress,
             ...rest
           }) => (
-            <Pressable {...rest} android_ripple={null} style={style} />
+            <Pressable
+              {...rest}
+              android_ripple={null}
+              style={style}
+              onPress={(event) => {
+                // En web el tab es un <a href>. Sin cancelar la navegación nativa,
+                // el navegador recarga la página y la app vuelve al dashboard.
+                if (Platform.OS === "web" && event != null && "preventDefault" in event) {
+                  const webEvent = event as unknown as {
+                    metaKey?: boolean;
+                    altKey?: boolean;
+                    ctrlKey?: boolean;
+                    shiftKey?: boolean;
+                    button?: number;
+                    preventDefault: () => void;
+                  };
+                  const hasModifier =
+                    webEvent.metaKey ||
+                    webEvent.altKey ||
+                    webEvent.ctrlKey ||
+                    webEvent.shiftKey;
+                  const isLeftClick = webEvent.button == null || webEvent.button === 0;
+                  if (hasModifier || !isLeftClick) {
+                    return;
+                  }
+                  webEvent.preventDefault();
+                }
+                onPress?.(event);
+              }}
+            />
           ),
           tabBarStyle: {
             backgroundColor: theme.surface,

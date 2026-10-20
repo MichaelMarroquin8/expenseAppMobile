@@ -45,6 +45,17 @@ const KNOWN_ACCOUNT_KINDS = new Set<AccountKind>([
   'broker',
 ]);
 
+const unionById = <T extends { id: string }>(primary: T[], secondary: T[]): T[] => {
+  const map = new Map<string, T>();
+  for (const item of secondary) {
+    if (item && typeof item.id === 'string') map.set(item.id, item);
+  }
+  for (const item of primary) {
+    if (item && typeof item.id === 'string') map.set(item.id, item);
+  }
+  return Array.from(map.values());
+};
+
 const sanitizeAccount = (raw: unknown): FinanceAccount | null => {
   if (!raw || typeof raw !== 'object') return null;
   const item = raw as Partial<FinanceAccount>;
@@ -600,9 +611,14 @@ export const useFinanceStore = create<FinanceState>()(
             ...defaultCategoryIcons,
             ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
           },
-          accounts: Array.isArray(persisted.accounts)
-            ? persisted.accounts.map(sanitizeAccount).filter((item): item is FinanceAccount => item != null)
-            : currentState.accounts,
+          accounts: unionById(
+            currentState.accounts,
+            Array.isArray(persisted.accounts)
+              ? persisted.accounts
+                  .map(sanitizeAccount)
+                  .filter((item): item is FinanceAccount => item != null)
+              : [],
+          ),
           settings: safeSettings,
         };
       },
