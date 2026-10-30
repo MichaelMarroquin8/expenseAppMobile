@@ -22,6 +22,8 @@ import { CardDetailScreen } from "../../features/cards/CardDetailScreen";
 import { AccountsScreen } from "../../features/accounts/AccountsScreen";
 import { AccountDetailScreen } from "../../features/accounts/AccountDetailScreen";
 import { AccountFormScreen } from "../../features/accounts/AccountFormScreen";
+import { ReceivableDebtScreen } from "../../features/accounts/ReceivableDebtScreen";
+import { InvestmentHoldingScreen } from "../../features/accounts/InvestmentHoldingScreen";
 import { CategoriesScreen } from "../../features/categories";
 import { CurrencySelectScreen } from "../../features/settings/CurrencySelectScreen";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
@@ -37,6 +39,8 @@ type RootStackParamList = {
   Accounts: undefined;
   AccountDetail: { accountId: string };
   AccountForm: { accountId?: string } | undefined;
+  ReceivableDebt: { accountId: string; debtId?: string };
+  InvestmentHolding: { accountId: string; holdingId?: string };
   Categories: undefined;
   Budgets: undefined;
   CurrencySelect: undefined;
@@ -272,6 +276,16 @@ export function MainNavigator() {
                 ? "Editar"
                 : "Nueva cuenta",
           })}
+        />
+        <Stack.Screen
+          name="ReceivableDebt"
+          component={ReceivableDebtScreen}
+          options={{ title: "Deuda", headerTitleAlign: "center" }}
+        />
+        <Stack.Screen
+          name="InvestmentHolding"
+          component={InvestmentHoldingScreen}
+          options={{ title: "Acción", headerTitleAlign: "center" }}
         />
         <Stack.Screen
           name="Categories"

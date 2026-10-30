@@ -9,6 +9,8 @@ rules_version = '2';
 //       onboardingDone: bool
 //       transactionCategories, accounts, budgets, goals, cards, smsDetections
 //       incomeCategories: list (optional)
+//       receivables: list (optional) — desglose de cuentas por cobrar
+//       holdings: list (optional) — acciones dentro de una cuenta de inversión
 //       categoryIcons, settings: map
 //       Los movimientos NO van aquí.
 //   - updatedAt: timestamp (required) - serverTimestamp()
@@ -60,6 +62,8 @@ service cloud.firestore {
         && snapshot.onboardingDone is bool
         && isValidList(snapshot.transactionCategories, 300)
         && (!('incomeCategories' in snapshot) || isValidList(snapshot.incomeCategories, 300))
+        && (!('receivables' in snapshot) || isValidList(snapshot.receivables, 2000))
+        && (!('holdings' in snapshot) || isValidList(snapshot.holdings, 2000))
         && snapshot.categoryIcons is map
         && isValidList(snapshot.accounts, 500)
         && isValidList(snapshot.budgets, 2000)
@@ -93,7 +97,7 @@ service cloud.firestore {
         && (!('cardId' in data) || isValidString(data.cardId, 80))
         && (!('accountId' in data) || isValidString(data.accountId, 80))
         && (!('destinationAccountId' in data) || isValidString(data.destinationAccountId, 80))
-        && (!('detectionId' in data) || isValidString(data.detectionId, 80))
+        && (!('detectionId' in data) || isValidString(data.detectionId, 500))
         && (!('recurringRule' in data) || data.recurringRule in ['daily', 'weekly', 'monthly']);
     }
 

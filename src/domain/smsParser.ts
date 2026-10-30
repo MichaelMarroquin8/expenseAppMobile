@@ -55,6 +55,25 @@ const isTrustedSender = (sender?: string): boolean => {
   return false;
 };
 
+/**
+ * Últimos 4 de la tarjeta: los 4 dígitos pegados a una máscara, sea `*2375`, `**2375`,
+ * `•••• 1234` o el símbolo que use el banco. No toma fechas, montos ni teléfonos.
+ */
+export const extractCardLast4 = (rawMessage: string): string | undefined => {
+  if (!rawMessage) return undefined;
+  // Cualquier signo que no sea letra, dígito ni separador de fecha o de monto.
+  const symbol = '[^\\s\\dA-Za-zÁÉÍÓÚÜáéíóúüÑñ/\\-.,:+()$€£]';
+  const masked = rawMessage.match(
+    new RegExp(`(?:^|[^A-Za-zÁÉÍÓÚÜáéíóúüÑñ\\d])(?:x{1,8}|${symbol}{1,8})\\s*(\\d{4})(?!\\d)`, 'i'),
+  );
+  if (masked?.[1]) return masked[1];
+
+  const labeled = rawMessage.match(
+    /(?:t\.?\s*cr[eé]d(?:ito)?|t\.?\s*d[eé]b(?:ito)?|tarjeta|terminaci[oó]n|terminada\s+en|visa|mastercard|amex|american\s+express)[^0-9]{0,24}(\d{4})(?!\d)/i,
+  );
+  return labeled?.[1];
+};
+
 const parseAmountValue = (rawValue?: string): number | undefined => {
   if (!rawValue) return undefined;
   const cleaned = rawValue.replace(/[^\d.,]/g, '');
@@ -161,7 +180,7 @@ export const parseSms = (input: SmsRawInput): Omit<SmsDetection, 'status' | 'dup
     rawMessage.match(
       /(?:en|a|comercio|establecimiento)\s+([a-z0-9áéíóúñ .&*'-]{3,45}?)(?=\s+(?:desde|con|el|de|por)\b|[.,]|$)/i,
     );
-  const last4Match = rawMessage.match(/(?:\*{2,}|terminaci[oó]n|tarjeta)\s?(\d{4})/i);
+  const last4 = extractCardLast4(rawMessage);
   const dateMatch = rawMessage.match(
     /(\d{4}[-/]\d{2}[-/]\d{2}(?:\s(?:a\s+las\s+)?\d{2}:\d{2}(?::\d{2})?)?|\d{2}[-/]\d{2}[-/]\d{4}(?:\s(?:a\s+las\s+)?\d{2}:\d{2}(?::\d{2})?)?)/i,
   );
@@ -206,7 +225,7 @@ export const parseSms = (input: SmsRawInput): Omit<SmsDetection, 'status' | 'dup
     amount: normalizedAmount,
     merchant: merchantMatch?.[1]?.trim() ?? 'Comercio detectado',
     occurredAt,
-    last4: last4Match?.[1],
+    last4,
     categoryGuess: guessCategory(rawMessage),
   };
 };

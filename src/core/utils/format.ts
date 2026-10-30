@@ -204,3 +204,41 @@ export const formatShortDate = (isoDate: string): string =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(isoDate));
+
+/** Fecha de calendario, sin hora: “15 de junio de 2026”. */
+export const formatCalendarDate = (isoDate: string): string => {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return new Intl.DateTimeFormat('es-CO', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+};
+
+export const todayDateInput = (): string => {
+  const date = new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+
+export const isoToDateInput = (isoDate: string): string => {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+
+/** Mediodía local para que el día elegido no se corra por la zona horaria. */
+export const dateInputToIso = (input: string): string | null => {
+  const match = input.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date.toISOString();
+};

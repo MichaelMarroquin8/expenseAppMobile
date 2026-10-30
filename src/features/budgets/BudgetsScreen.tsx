@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, monthKey, monthKeyFromIso, parseAmountInput } from '../../core/utils/format';
+import { isBalanceAdjustment } from '../../domain/accounts';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function BudgetsScreen() {
@@ -19,7 +21,10 @@ export function BudgetsScreen() {
   const [selectedCategory, setSelectedCategory] = useState('GLOBAL');
   const [limitRaw, setLimitRaw] = useState('');
 
-  const monthExpenses = tx.filter((item) => item.type === 'expense' && monthKeyFromIso(item.occurredAt) === current);
+  const monthExpenses = tx.filter(
+    (item) =>
+      !isBalanceAdjustment(item) && item.type === 'expense' && monthKeyFromIso(item.occurredAt) === current,
+  );
   const availableCategories = useMemo(
     () => ['GLOBAL', ...categories.filter((item) => item.toLowerCase() !== 'salario')],
     [categories],
@@ -51,7 +56,7 @@ export function BudgetsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
         <SectionTitle title="Presupuestos" subtitle="Configura límites por categoría y controla tu consumo" />
@@ -123,7 +128,7 @@ export function BudgetsScreen() {
               );
             })
         )}
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

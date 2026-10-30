@@ -66,7 +66,7 @@ export interface FinanceAccount {
   name: string;
   provider: string;
   kind: AccountKind;
-  /** Saldo (activo) o deuda (pasivo). En inversión se sincroniza con quantity × lastPrice. */
+  /** Saldo (activo) o deuda (pasivo). En inversión es el valor de mercado de las acciones. */
   balance: number;
   currency: string;
   color: string;
@@ -75,13 +75,53 @@ export interface FinanceAccount {
   /** Últimos 4 de la cuenta, para emparejar SMS como “cuenta *1750”. */
   last4?: string;
   excludeFromTotal?: boolean;
-  /** Ticker Yahoo (ej. SPY, VOO, BTC-USD). Solo inversiones. */
+  /** Ticker legado, cuando la cuenta era una sola acción. Se migra a `InvestmentHolding`. */
   symbol?: string;
-  /** Cantidad de acciones o fracciones (ej. 0.25 de SPY). */
+  /** Cantidad legada de acciones o fracciones. Se migra a `InvestmentHolding`. */
   quantity?: number;
   lastPrice?: number;
   priceCurrency?: string;
   priceUpdatedAt?: string;
+}
+
+/** Una acción o fracción comprada dentro de una cuenta de inversión (Hapi, XTB, Trii). */
+export interface InvestmentHolding {
+  id: string;
+  accountId: string;
+  /** Nombre visible, por ejemplo Apple. Si falta, se muestra el ticker. */
+  name: string;
+  /** Ticker de mercado (Yahoo), por ejemplo AAPL, SPY o BTC-USD. */
+  symbol: string;
+  /** Acciones enteras o fracción, por ejemplo 0.25. */
+  quantity: number;
+  lastPrice?: number;
+  priceCurrency?: string;
+  priceUpdatedAt?: string;
+  note?: string;
+}
+
+/** Abono sobre un préstamo de una cuenta por cobrar. */
+export interface ReceivablePayment {
+  id: string;
+  amount: number;
+  occurredAt: string;
+  note?: string;
+}
+
+/**
+ * Una parte de una cuenta por cobrar: a quién se le prestó, cuánto y cuándo,
+ * más los abonos que ya recibió esa deuda.
+ */
+export interface ReceivableDebt {
+  id: string;
+  accountId: string;
+  personName: string;
+  /** Monto original prestado. */
+  principal: number;
+  /** Fecha del préstamo (ISO). */
+  lentAt: string;
+  note?: string;
+  payments: ReceivablePayment[];
 }
 
 export interface Budget {
@@ -105,6 +145,8 @@ export interface SmsDetection {
   sender?: string;
   trustedSource: boolean;
   channel: 'sms' | 'email' | 'notification';
+  /** `in` cuando el aviso es plata recibida. Si falta, se registra como gasto. */
+  direction?: 'in' | 'out';
   rawMessage: string;
   bank?: string;
   amount?: number;

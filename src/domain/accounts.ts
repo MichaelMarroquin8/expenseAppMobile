@@ -73,6 +73,10 @@ export const isLiabilityKind = (kind: AccountKind): boolean => {
   return normalized === 'credit_card' || normalized === 'payable';
 };
 
+/** Dinero que me deben. El desglose por persona solo aplica a este tipo. */
+export const isReceivableKind = (kind: AccountKind): boolean =>
+  normalizeAccountKind(kind) === 'receivable';
+
 export const isInvestmentKind = (kind: AccountKind): boolean =>
   normalizeAccountKind(kind) === 'investment';
 

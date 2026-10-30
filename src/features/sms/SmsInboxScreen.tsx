@@ -2,13 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardSafeScroll } from "../../components/KeyboardSafeScroll";
 import { PremiumCard, Screen, SectionTitle } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import {
@@ -17,7 +17,7 @@ import {
   formatShortDate,
   parseAmountInput,
 } from "../../core/utils/format";
-import { reconcileDetections, SmsRawInput } from "../../domain/smsParser";
+import { extractCardLast4, reconcileDetections, SmsRawInput } from "../../domain/smsParser";
 import { useFinanceStore } from "../../store/useFinanceStore";
 
 const mockMessages: SmsRawInput[] = [
@@ -73,7 +73,7 @@ export function SmsInboxScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[
           styles.container,
           { paddingBottom: Math.max(insets.bottom + 170, 190) },
@@ -94,11 +94,13 @@ export function SmsInboxScreen() {
         ) : null}
 
         {pending.map((item) => {
+          const resolvedLast4 = item.accountLast4
+            ? undefined
+            : item.last4 ?? extractCardLast4(item.rawMessage);
           const linkedCard = item.accountLast4
             ? undefined
-            : item.cardId
-              ? cards.find((card) => card.id === item.cardId)
-              : undefined;
+            : (item.cardId ? cards.find((card) => card.id === item.cardId) : undefined) ??
+              (resolvedLast4 ? cards.find((card) => card.last4 === resolvedLast4) : undefined);
           const linkedAccount = item.accountLast4
             ? accounts.find((account) => account.last4 === item.accountLast4) ??
               accounts.find((account) =>
@@ -110,6 +112,9 @@ export function SmsInboxScreen() {
               <Text style={[styles.merchant, { color: theme.text }]}>{item.merchant}</Text>
               <Text style={[styles.meta, { color: theme.textMuted }]}>
                 {item.bank ?? "Banco no detectado"} • {item.categoryGuess ?? "Sin categoría"}
+                {item.channel === "notification"
+                  ? ` • ${item.direction === "in" ? "Ingreso" : "Gasto"}`
+                  : ""}
               </Text>
               <Text
                 style={[
@@ -121,7 +126,7 @@ export function SmsInboxScreen() {
                 {item.trustedSource ? "Confiable" : "No verificado"}
               </Text>
               <View style={styles.amountRow}>
-                <Text style={[styles.amount, { color: theme.danger }]}>
+                <Text style={[styles.amount, { color: item.direction === "in" ? theme.success : theme.danger }]}>
                   {formatMoney(item.amount ?? 0, currency)}
                 </Text>
                 <Pressable
@@ -173,7 +178,7 @@ export function SmsInboxScreen() {
               <Text style={[styles.meta, { color: theme.textMuted }]}>
                 {item.occurredAt ? formatShortDate(item.occurredAt) : "Fecha no detectada"}
                 {item.accountLast4 ? ` • cuenta •••• ${item.accountLast4}` : ""}
-                {item.last4 ? ` • •••• ${item.last4}` : ""}
+                {resolvedLast4 ? ` • •••• ${resolvedLast4}` : ""}
               </Text>
               {item.accountLast4 ? (
                 <Text style={[styles.meta, { color: linkedAccount ? theme.success : theme.warning }]}>
@@ -188,7 +193,7 @@ export function SmsInboxScreen() {
               ) : (
                 <Text style={[styles.meta, { color: theme.warning }]}>
                   Sin tarjeta asociada
-                  {item.last4 ? ` (agrega una con terminación ${item.last4})` : ""}
+                  {resolvedLast4 ? ` (agrega una con terminación ${resolvedLast4})` : ""}
                 </Text>
               )}
               <View style={styles.actions}>
@@ -292,7 +297,7 @@ export function SmsInboxScreen() {
             </View>
           ) : null}
         </PremiumCard>
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

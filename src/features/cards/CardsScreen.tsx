@@ -4,6 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
@@ -150,12 +151,10 @@ export function CardsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         ref={scrollRef}
         style={styles.flex}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 24, 32) }]}
       >
         <SectionTitle title="Tarjetas y métodos de pago" subtitle="Solo se guardan últimos 4 dígitos" />
@@ -374,7 +373,7 @@ export function CardsScreen() {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

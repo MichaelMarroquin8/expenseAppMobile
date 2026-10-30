@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import {
   cacheCloudTransactions,
   clearCloudTransactionCache,
+  CloudWriteTarget,
   FinanceCloudSnapshot,
   loadCloudRecord,
   loadCloudTransactions,
@@ -11,7 +12,9 @@ import {
   syncCloudTransactions,
 } from '../../backend/cloudSync';
 import { firebaseAuth, firebaseDb, isFirebaseConfigured } from '../../backend/firebase';
-import { Transaction } from '../../domain/models';
+import { absorbLegacyPositions, sanitizeInvestmentHolding } from '../../domain/investments';
+import { InvestmentHolding, ReceivableDebt, Transaction } from '../../domain/models';
+import { sanitizeReceivableDebt } from '../../domain/receivables';
 import { reconcileDetections } from '../../domain/smsParser';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
@@ -91,6 +94,8 @@ const extractSnapshot = (): FinanceCloudSnapshot => {
     incomeCategories: state.incomeCategories,
     categoryIcons: state.categoryIcons,
     accounts: state.accounts,
+    receivables: state.receivables,
+    holdings: state.holdings,
     budgets: state.budgets,
     goals: state.goals,
     cards: state.cards,
@@ -134,6 +139,11 @@ const snapshotsMatch = (cloud: StoredFinanceSnapshot | null, local: FinanceCloud
     sortValue({
       ...snapshot,
       accounts: sortById(snapshot.accounts),
+      receivables: sortById(snapshot.receivables).map((debt) => ({
+        ...debt,
+        payments: sortById(debt.payments ?? []),
+      })),
+      holdings: sortById(snapshot.holdings),
       budgets: sortById(snapshot.budgets),
       goals: sortById(snapshot.goals),
       cards: sortById(snapshot.cards),
@@ -154,7 +164,22 @@ const syncErrorMessage = (error: unknown): string => {
   if (raw.includes("Database '(default)' not found") || code === 'not-found') {
     return 'Firestore no tiene la base (default). Créala en Firebase y vuelve a intentar.';
   }
-  if (code === 'permission-denied') return 'La nube rechazó el acceso. Revisa las reglas de Firestore.';
+  const target =
+    error && typeof error === 'object' && 'cloudTarget' in error
+      ? (error as { cloudTarget?: CloudWriteTarget }).cloudTarget
+      : undefined;
+  if (code === 'invalid-transaction' && target?.kind === 'transaction') {
+    return `El movimiento ${target.label} tiene un dato inválido (${target.field}). Edítalo o bórralo y vuelve a sincronizar.`;
+  }
+  if (code === 'permission-denied') {
+    if (target?.kind === 'profile') {
+      return 'La nube rechazó tus cuentas y ajustes. Revisa que las reglas de Firestore publicadas sean las del proyecto.';
+    }
+    if (target?.kind === 'transaction') {
+      return `La nube rechazó el movimiento ${target.label}. Los demás se guardaron. Revisa que las reglas de Firestore publicadas sean las del proyecto.`;
+    }
+    return 'La nube rechazó el acceso. Revisa las reglas de Firestore.';
+  }
   if (raw.includes('Unsupported field value: undefined') || code === 'invalid-argument') {
     return 'Hay un dato vacío que la nube no acepta. Vuelve a intentar.';
   }
@@ -182,7 +207,31 @@ const applyCloudMerge = (cloud: StoredFinanceSnapshot | null, transactions: Tran
               ...current.categoryIcons,
               ...(cloud?.categoryIcons ?? {}),
             },
-            accounts: mergeById(cloud?.accounts, current.accounts),
+            ...(() => {
+              const portfolio = absorbLegacyPositions(
+                mergeById(cloud?.accounts, current.accounts),
+                mergeById(
+                  Array.isArray(cloud?.holdings)
+                    ? cloud.holdings
+                        .map((item) => sanitizeInvestmentHolding(item))
+                        .filter((item): item is InvestmentHolding => item != null)
+                    : [],
+                  current.holdings ?? [],
+                ),
+              );
+              return {
+                accounts: portfolio.accounts,
+                holdings: portfolio.holdings,
+              };
+            })(),
+            receivables: mergeById(
+              Array.isArray(cloud?.receivables)
+                ? cloud.receivables
+                    .map((item) => sanitizeReceivableDebt(item))
+                    .filter((item): item is ReceivableDebt => item != null)
+                : [],
+              current.receivables ?? [],
+            ),
             budgets: mergeById(cloud?.budgets, current.budgets),
             goals: mergeById(cloud?.goals, current.goals),
             cards: mergeById(cloud?.cards, current.cards),
@@ -310,6 +359,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSyncError(null);
       try {
         await waitForLocalHydration();
+      } finally {
+        setLoading(false);
+      }
+      try {
         const record = await loadCloudRecord(nextUser.uid);
         const remoteTransactions = await loadCloudTransactions(nextUser.uid);
         cacheCloudTransactions(nextUser.uid, remoteTransactions);
@@ -323,7 +376,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         markSyncError(error);
       } finally {
         syncPausedRef.current = false;
-        setLoading(false);
       }
     });
 

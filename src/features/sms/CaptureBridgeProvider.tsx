@@ -25,6 +25,7 @@ import {
 import {
   fetchRecentBancolombiaSms,
   fetchSmsBridgeStatus,
+  hasAndroidSmsPermissions,
   isAndroidSmsAutoAvailable,
   markSmsConsumed,
   requestAndroidSmsPermissions,
@@ -78,9 +79,20 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
 
   const smsSinceRef = useRef<number | undefined>(undefined);
   const walletSinceRef = useRef<number | undefined>(undefined);
+  const [settingsReady, setSettingsReady] = useState(() => useFinanceStore.persist.hasHydrated());
 
   const notifAvailable = isAndroidNotificationAutoAvailable();
   const smsAvailable = isAndroidSmsAutoAvailable();
+
+  useEffect(() => {
+    if (useFinanceStore.persist.hasHydrated()) {
+      setSettingsReady(true);
+      return;
+    }
+    return useFinanceStore.persist.onFinishHydration(() => {
+      setSettingsReady(true);
+    });
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     if (!notifAvailable) {
@@ -189,23 +201,74 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
     await runSmsSync();
   }, [smsAvailable, runSmsSync]);
 
+  const resumeGrantedCapture = useCallback(async () => {
+    try {
+      const settings = useFinanceStore.getState().settings;
+      await Promise.all([
+        syncNativeNotificationPackages(settings.notificationPackages),
+        syncNativeSmsShortCodes(settings.bankSmsShortCodes),
+      ]);
+    } catch {
+      // Si el puente nativo no responde, igual se intenta leer con la lista anterior.
+    }
+
+    if (notifAvailable) {
+      try {
+        const enabled = await isNotificationAccessEnabled();
+        setWalletAccess(enabled);
+        if (enabled) {
+          setWalletError(null);
+          setWalletListening(true);
+          await runWalletSync();
+        } else {
+          setWalletListening(false);
+        }
+      } catch {
+        setWalletError("No se pudo comprobar el acceso a notificaciones.");
+      }
+    }
+
+    if (smsAvailable) {
+      try {
+        const granted = await hasAndroidSmsPermissions();
+        if (granted) {
+          setSmsError(null);
+          setSmsEnabled(true);
+          await runSmsSync();
+        } else {
+          setSmsEnabled(false);
+        }
+      } catch {
+        setSmsError("No se pudo comprobar el permiso de SMS.");
+      }
+    }
+
+    await refreshStatus();
+  }, [notifAvailable, smsAvailable, refreshStatus, runSmsSync, runWalletSync]);
+
+  const resumeRef = useRef(resumeGrantedCapture);
+  resumeRef.current = resumeGrantedCapture;
+
   useEffect(() => {
+    if (!settingsReady) return;
     void syncNativeSmsShortCodes(bankSmsShortCodes);
     void syncNativeNotificationPackages(notificationPackages);
-  }, [bankSmsShortCodes, notificationPackages]);
+  }, [settingsReady, bankSmsShortCodes, notificationPackages]);
 
   useEffect(() => {
+    if (!settingsReady) return;
     void setNativeBridgeDebugEnabled(bridgeDebugEnabled);
     void setNativeBackgroundSyncEnabled(backgroundSyncEnabled);
-    void refreshStatus();
-  }, [bridgeDebugEnabled, backgroundSyncEnabled, refreshStatus]);
+  }, [settingsReady, bridgeDebugEnabled, backgroundSyncEnabled]);
 
   useEffect(() => {
+    if (!settingsReady) return;
+    void resumeRef.current();
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refreshStatus();
+      if (state === "active") void resumeRef.current();
     });
     return () => sub.remove();
-  }, [refreshStatus]);
+  }, [settingsReady, notifAvailable, smsAvailable]);
 
   useEffect(() => {
     if (!walletListening || !notifAvailable || !walletAccess) return;

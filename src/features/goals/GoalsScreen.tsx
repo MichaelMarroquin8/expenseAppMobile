@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, getCurrencyFractionDigits, parseAmountInput } from '../../core/utils/format';
@@ -41,7 +42,7 @@ export function GoalsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
         <SectionTitle title="Metas de ahorro" subtitle="Crea objetivos y registra aportes manuales o automáticos" />
@@ -122,7 +123,7 @@ export function GoalsScreen() {
             </PremiumCard>
           );
         })}
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

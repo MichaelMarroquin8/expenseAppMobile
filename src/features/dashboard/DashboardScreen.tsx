@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from '../../core/utils/format';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
+import { isBalanceAdjustment } from '../../domain/accounts';
 import { Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { QuickAddTransactionModal } from '../transactions/QuickAddTransactionModal';
@@ -24,19 +25,20 @@ export function DashboardScreen() {
   const currency = useFinanceStore((state) => state.settings.currency);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const summary = useMemo(() => {
+    const ledger = transactions.filter((tx) => !isBalanceAdjustment(tx));
     const now = new Date();
     const thisMonth = monthKey(now);
     const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonth = monthKey(previous);
-    const txThisMonth = transactions.filter((tx) => monthKeyFromIso(tx.occurredAt) === thisMonth);
-    const txLastMonth = transactions.filter((tx) => monthKeyFromIso(tx.occurredAt) === lastMonth);
+    const txThisMonth = ledger.filter((tx) => monthKeyFromIso(tx.occurredAt) === thisMonth);
+    const txLastMonth = ledger.filter((tx) => monthKeyFromIso(tx.occurredAt) === lastMonth);
     const income = txThisMonth.filter((tx) => tx.type === 'income').reduce((acc, tx) => acc + tx.amount, 0);
     const expenses = txThisMonth.filter((tx) => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0);
     const prevExpenses = txLastMonth
       .filter((tx) => tx.type === 'expense')
       .reduce((acc, tx) => acc + tx.amount, 0);
     const savings = income - expenses;
-    const balance = transactions.reduce(
+    const balance = ledger.reduce(
       (acc, tx) => acc + (tx.type === 'income' ? tx.amount : tx.type === 'expense' ? -tx.amount : 0),
       0,
     );
@@ -54,7 +56,7 @@ export function DashboardScreen() {
       balance,
       expenseVsLastMonth: prevExpenses === 0 ? 0 : ((expenses - prevExpenses) / prevExpenses) * 100,
       categoryTotals,
-      latest: transactions.slice(0, 5),
+      latest: ledger.slice(0, 5),
     };
   }, [transactions]);
 

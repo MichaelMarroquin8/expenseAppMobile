@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { CategoryKind, useFinanceStore } from '../../store/useFinanceStore';
@@ -51,7 +52,7 @@ export function CategoriesScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}>
+      <KeyboardSafeScroll contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}>
         <SectionTitle title="Categorías" subtitle="Separa las categorías de gastos y de ingresos" />
 
         <View style={styles.segmentRow}>
@@ -146,7 +147,7 @@ export function CategoriesScreen() {
               </PremiumCard>
             );
           })}
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

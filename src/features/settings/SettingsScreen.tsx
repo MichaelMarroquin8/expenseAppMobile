@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { findCurrency, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
@@ -117,7 +118,7 @@ export function SettingsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
         <SectionTitle title="Más" subtitle="Preferencias y módulos" />
@@ -262,7 +263,7 @@ export function SettingsScreen() {
               <Text style={[styles.disclosureLabel, { color: theme.text }]}>Detección automática</Text>
               {detectionOpen ? null : (
                 <Text style={[styles.note, { color: theme.textMuted }]}>
-                  Wallet: {walletLabel} · SMS: {smsLabel}
+                  Avisos: {walletLabel} · SMS: {smsLabel}
                 </Text>
               )}
             </View>
@@ -306,9 +307,9 @@ export function SettingsScreen() {
 
           <View style={styles.captureRow}>
             <View style={styles.navText}>
-              <Text style={[styles.title, { color: theme.text }]}>Google Wallet</Text>
+              <Text style={[styles.title, { color: theme.text }]}>Notificaciones</Text>
               <Text style={[styles.note, { color: theme.textMuted }]}>
-                Compras de la billetera, pendientes de tu confirmación.
+                Wallet, Nu, Nequi y los otros bancos activos. Quedan pendientes de tu confirmación.
               </Text>
               {bridge.walletLastSync ? (
                 <Text style={[styles.note, { color: theme.textMuted }]}>
@@ -511,7 +512,7 @@ export function SettingsScreen() {
             </Pressable>
           ))}
         </PremiumCard>
-      </ScrollView>
+      </KeyboardSafeScroll>
     </Screen>
   );
 }

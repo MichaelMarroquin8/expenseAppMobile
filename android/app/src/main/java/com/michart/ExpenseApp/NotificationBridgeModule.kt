@@ -14,11 +14,14 @@ import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.module.annotations.ReactModule
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 @ReactModule(name = "NotificationBridge")
@@ -26,6 +29,8 @@ class NotificationBridgeModule(private val reactContext: ReactApplicationContext
   ReactContextBaseJavaModule(reactContext) {
 
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val backgroundSyncMutex = Mutex()
+  private val backgroundSyncGeneration = AtomicInteger(0)
 
   override fun getName(): String = "NotificationBridge"
 
@@ -82,6 +87,7 @@ class NotificationBridgeModule(private val reactContext: ReactApplicationContext
             40
           }
 
+        WalletNotificationListenerService.requestIngest(reactContext)
         val buffer = WalletNotificationListenerService.getBuffered(reactContext)
         val out = WritableNativeArray()
         var count = 0
@@ -171,16 +177,23 @@ class NotificationBridgeModule(private val reactContext: ReactApplicationContext
 
   @ReactMethod
   fun setBackgroundSyncEnabled(enabled: Boolean, promise: Promise) {
+    val ticket = backgroundSyncGeneration.incrementAndGet()
     scope.launch {
-      try {
-        if (enabled) {
-          BridgeSyncWorker.schedule(reactContext)
-        } else {
-          BridgeSyncWorker.cancel(reactContext)
+      backgroundSyncMutex.withLock {
+        try {
+          if (ticket != backgroundSyncGeneration.get()) {
+            promise.resolve(true)
+            return@withLock
+          }
+          if (enabled) {
+            BridgeSyncWorker.schedule(reactContext)
+          } else {
+            BridgeSyncWorker.cancel(reactContext)
+          }
+          promise.resolve(true)
+        } catch (e: Exception) {
+          promise.reject("NOTIF_BG_SYNC_ERROR", e.message, e)
         }
-        promise.resolve(true)
-      } catch (e: Exception) {
-        promise.reject("NOTIF_BG_SYNC_ERROR", e.message, e)
       }
     }
   }

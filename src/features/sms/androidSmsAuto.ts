@@ -63,8 +63,18 @@ const mapNative = (msg: NativeSmsMessage): SmsRawInput | null => {
   };
 };
 
+export const hasAndroidSmsPermissions = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') return false;
+  const [read, receive] = await Promise.all([
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS),
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS),
+  ]);
+  return read && receive;
+};
+
 export const requestAndroidSmsPermissions = async (): Promise<boolean> => {
   if (Platform.OS !== 'android') return false;
+  if (await hasAndroidSmsPermissions()) return true;
   const results = await PermissionsAndroid.requestMultiple([
     PermissionsAndroid.PERMISSIONS.READ_SMS,
     PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,

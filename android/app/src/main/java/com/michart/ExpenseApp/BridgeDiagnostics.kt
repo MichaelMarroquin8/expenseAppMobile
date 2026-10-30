@@ -167,7 +167,10 @@ object BridgeDiagnostics {
       reasons.add("last4")
     }
     if (haystack.contains(
-        Regex("""compra|pagaste|pago|retiro|transfer|compra\s+por|charged|purchase""", RegexOption.IGNORE_CASE),
+        Regex(
+          """compra|pagaste|pago|retiro|transfer|enviaste|env[ií]o|recibiste|plata|charged|purchase""",
+          RegexOption.IGNORE_CASE,
+        ),
       )
     ) {
       score += 1

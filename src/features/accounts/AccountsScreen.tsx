@@ -25,8 +25,8 @@ import {
   isInvestmentKind,
   isLiabilityKind,
   normalizeAccountKind,
-  syncInvestmentBalance,
 } from '../../domain/accounts';
+import { holdingsForAccount, summarizePositions } from '../../domain/investments';
 import { AccountKind, FinanceAccount } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
@@ -48,7 +48,8 @@ export function AccountsScreen() {
   const navigation = useNavigation<Nav>();
   const baseCurrency = useFinanceStore((state) => state.settings.currency);
   const accounts = useFinanceStore((state) => state.accounts);
-  const upsertAccount = useFinanceStore((state) => state.upsertAccount);
+  const holdings = useFinanceStore((state) => state.holdings);
+  const applyMarketQuotes = useFinanceStore((state) => state.applyMarketQuotes);
 
   const [rates, setRates] = useState<Record<string, number> | null>(null);
   const [refreshingPrices, setRefreshingPrices] = useState(false);
@@ -76,14 +77,48 @@ export function AccountsScreen() {
     [baseCurrency, rates],
   );
 
+  const valueInBase = useCallback(
+    (account: FinanceAccount): number => {
+      if (!isInvestmentKind(account.kind)) {
+        return toBase(getAccountDisplayValue(account), getAccountDisplayCurrency(account));
+      }
+      const summary = summarizePositions(
+        account,
+        holdings,
+        rates ? (amount, currency) => toBase(amount, currency) : undefined,
+        baseCurrency,
+      );
+      if (summary.mixed && summary.currency === baseCurrency) return summary.amount;
+      return toBase(summary.amount, summary.currency);
+    },
+    [baseCurrency, holdings, rates, toBase],
+  );
+
+  const displayValue = useCallback(
+    (account: FinanceAccount): { amount: number; currency: string } => {
+      if (!isInvestmentKind(account.kind)) {
+        return {
+          amount: getAccountDisplayValue(account),
+          currency: getAccountDisplayCurrency(account),
+        };
+      }
+      const summary = summarizePositions(
+        account,
+        holdings,
+        rates ? (amount, currency) => toBase(amount, currency) : undefined,
+        baseCurrency,
+      );
+      return { amount: summary.amount, currency: summary.currency };
+    },
+    [baseCurrency, holdings, rates, toBase],
+  );
+
   const { assetsBase, liabilitiesBase, netWorthBase } = useMemo(() => {
     let assets = 0;
     let liabilities = 0;
     for (const account of accounts) {
       if (account.excludeFromTotal) continue;
-      const value = getAccountDisplayValue(account);
-      const currency = getAccountDisplayCurrency(account);
-      const inBase = toBase(value, currency);
+      const inBase = valueInBase(account);
       if (isLiabilityKind(account.kind)) {
         liabilities += inBase;
       } else {
@@ -95,7 +130,7 @@ export function AccountsScreen() {
       liabilitiesBase: liabilities,
       netWorthBase: assets - liabilities,
     };
-  }, [accounts, toBase]);
+  }, [accounts, valueInBase]);
 
   const sections = useMemo((): SectionGroup[] => {
     const map = new Map<AccountKind, FinanceAccount[]>();
@@ -118,55 +153,38 @@ export function AccountsScreen() {
     return ordered;
   }, [accounts]);
 
-  const investmentWithSymbol = useMemo(
-    () => accounts.filter((item) => isInvestmentKind(item.kind) && item.symbol?.trim()),
-    [accounts],
-  );
+  const quotedSymbols = useMemo(() => {
+    const symbols = holdings.map((holding) => holding.symbol.trim()).filter(Boolean);
+    for (const account of accounts) {
+      if (isInvestmentKind(account.kind) && account.symbol?.trim()) symbols.push(account.symbol.trim());
+    }
+    return [...new Set(symbols.map((symbol) => symbol.toUpperCase()))];
+  }, [accounts, holdings]);
 
   const sectionSubtotalBase = (list: FinanceAccount[], asLiability: boolean): number => {
     let sum = 0;
     for (const account of list) {
       if (account.excludeFromTotal) continue;
-      const value = getAccountDisplayValue(account);
-      const currency = getAccountDisplayCurrency(account);
-      const inBase = toBase(value, currency);
       if (asLiability === isLiabilityKind(account.kind)) {
-        sum += inBase;
+        sum += valueInBase(account);
       }
     }
     return sum;
   };
 
   const refreshInvestmentPrices = async () => {
-    if (investmentWithSymbol.length === 0) return;
+    if (quotedSymbols.length === 0) return;
     setRefreshingPrices(true);
     try {
-      const symbols = investmentWithSymbol.map((item) => item.symbol!);
-      const { ok, failed } = await fetchQuotes(symbols);
-      const bySymbol = new Map(ok.map((quote) => [quote.symbol.toUpperCase(), quote]));
-      let updated = 0;
-      for (const account of investmentWithSymbol) {
-        const key = account.symbol!.trim().toUpperCase();
-        const quote = bySymbol.get(key) ?? ok.find((item) => item.symbol.toUpperCase() === key);
-        if (!quote) continue;
-        const next = syncInvestmentBalance({
-          ...account,
-          symbol: quote.symbol,
-          lastPrice: quote.price,
-          priceCurrency: quote.currency,
-          priceUpdatedAt: quote.asOf,
-          currency: quote.currency,
-        });
-        upsertAccount(next);
-        updated += 1;
-      }
+      const { ok, failed } = await fetchQuotes(quotedSymbols);
+      if (ok.length > 0) applyMarketQuotes(ok);
       if (failed.length > 0) {
         Alert.alert(
           'Precios parcialmente actualizados',
-          `Se actualizaron ${updated}. Fallaron: ${failed.map((item) => item.symbol).join(', ')}`,
+          `Se actualizaron ${ok.length}. Fallaron: ${failed.map((item) => item.symbol).join(', ')}`,
         );
       } else {
-        Alert.alert('Listo', `Se actualizaron ${updated} precio(s) de mercado.`);
+        Alert.alert('Listo', `Se actualizaron ${ok.length} precio(s) de mercado.`);
       }
     } catch (error) {
       Alert.alert(
@@ -209,7 +227,7 @@ export function AccountsScreen() {
           </View>
         </PremiumCard>
 
-        {investmentWithSymbol.length > 0 ? (
+        {quotedSymbols.length > 0 ? (
           <Pressable
             onPress={refreshInvestmentPrices}
             disabled={refreshingPrices}
@@ -229,8 +247,7 @@ export function AccountsScreen() {
         {sections.length === 0 ? (
           <PremiumCard>
             <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-              Aún no tienes cuentas. Añade efectivo, bancos, tarjetas de crédito o inversiones (ej. 0,25
-              acciones de SPY).
+              Aún no tienes cuentas. Añade efectivo, bancos o un bróker como Hapi, XTB o Trii, y dentro anota cada acción.
             </Text>
           </PremiumCard>
         ) : (
@@ -247,9 +264,19 @@ export function AccountsScreen() {
                   </Text>
                 </View>
                 {section.accounts.map((account) => {
-                  const value = getAccountDisplayValue(account);
-                  const currency = getAccountDisplayCurrency(account);
+                  const shown = displayValue(account);
+                  const positions = isInvestmentKind(account.kind)
+                    ? holdingsForAccount(holdings, account.id)
+                    : [];
                   const iconName = (account.icon ?? 'wallet-outline') as keyof typeof Ionicons.glyphMap;
+                  const positionMeta =
+                    positions.length === 1
+                      ? `${formatQuantity(positions[0].quantity)} × ${positions[0].symbol}${
+                          positions[0].priceUpdatedAt ? ` · ${formatShortDate(positions[0].priceUpdatedAt)}` : ''
+                        }`
+                      : positions.length > 1
+                        ? `${positions.length} acciones`
+                        : null;
                   return (
                     <Pressable
                       key={account.id}
@@ -266,12 +293,9 @@ export function AccountsScreen() {
                             <Text style={[styles.accountName, { color: theme.text }]}>
                               {account.name}
                             </Text>
-                            {isInvestmentKind(account.kind) && account.symbol ? (
+                            {positionMeta ? (
                               <Text style={[styles.accountMeta, { color: theme.textMuted }]}>
-                                {formatQuantity(account.quantity ?? 0)} × {account.symbol}
-                                {account.priceUpdatedAt
-                                  ? ` · ${formatShortDate(account.priceUpdatedAt)}`
-                                  : ''}
+                                {positionMeta}
                               </Text>
                             ) : (
                               <Text style={[styles.accountMeta, { color: theme.textMuted }]}>
@@ -283,7 +307,7 @@ export function AccountsScreen() {
                           </View>
                           <View style={styles.accountRight}>
                             <Text style={[styles.balance, { color: theme.text }]}>
-                              {formatMoney(value, currency)}
+                              {formatMoney(shown.amount, shown.currency)}
                             </Text>
                             <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
                           </View>

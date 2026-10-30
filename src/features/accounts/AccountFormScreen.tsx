@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -14,18 +13,18 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fetchQuote } from '../../backend/marketQuotes';
+import { DateField } from '../../components/DateField';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { ConfirmModal, PremiumCard, Screen } from '../../components/ui';
 import { CURRENCIES, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
+  dateInputToIso,
   formatAmountInput,
+  formatCalendarDate,
   formatMoney,
-  formatQuantityInput,
   parseAmountInput,
-  parseQuantityInput,
-  quantityFromRaw,
-  quantityToRaw,
+  todayDateInput,
 } from '../../core/utils/format';
 import {
   ACCOUNT_ICON_OPTIONS,
@@ -34,8 +33,8 @@ import {
   defaultIconForKind,
   isInvestmentKind,
   isLiabilityKind,
+  isReceivableKind,
   normalizeAccountKind,
-  syncInvestmentBalance,
 } from '../../domain/accounts';
 import { AccountKind, FinanceAccount } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
@@ -47,6 +46,14 @@ type AccountFormParams = {
 const palette = ['#2563EB', '#A855F7', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#0EA5E9'];
 const QUICK_CURRENCIES = ['COP', 'USD', 'EUR', 'MXN'];
 
+type DebtDraft = {
+  id: string;
+  personName: string;
+  principalRaw: string;
+  lentAt: string;
+  note: string;
+};
+
 export function AccountFormScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -56,7 +63,9 @@ export function AccountFormScreen() {
 
   const defaultCurrency = useFinanceStore((state) => state.settings.currency);
   const accounts = useFinanceStore((state) => state.accounts);
+  const holdings = useFinanceStore((state) => state.holdings);
   const upsertAccount = useFinanceStore((state) => state.upsertAccount);
+  const upsertReceivableDebt = useFinanceStore((state) => state.upsertReceivableDebt);
   const deleteAccount = useFinanceStore((state) => state.deleteAccount);
 
   const existing = useMemo(
@@ -76,22 +85,22 @@ export function AccountFormScreen() {
   const [icon, setIcon] = useState(existing?.icon ?? defaultIconForKind(kind));
   const [note, setNote] = useState(existing?.note ?? '');
   const [excludeFromTotal, setExcludeFromTotal] = useState(existing?.excludeFromTotal ?? false);
-  const [symbol, setSymbol] = useState(existing?.symbol ?? '');
-  const [quantityRaw, setQuantityRaw] = useState(
-    existing?.quantity != null ? quantityToRaw(existing.quantity) : '',
-  );
-  const [priceRaw, setPriceRaw] = useState(
-    existing?.lastPrice != null ? String(existing.lastPrice) : '',
-  );
-  const [priceCurrency, setPriceCurrency] = useState(existing?.priceCurrency ?? 'USD');
-  const [priceUpdatedAt, setPriceUpdatedAt] = useState(existing?.priceUpdatedAt);
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const [draftPerson, setDraftPerson] = useState('');
+  const [draftAmount, setDraftAmount] = useState('');
+  const [draftDate, setDraftDate] = useState(todayDateInput());
+  const [draftNote, setDraftNote] = useState('');
+  const [drafts, setDrafts] = useState<DebtDraft[]>([]);
 
   const investmentMode = isInvestmentKind(kind);
   const liabilityMode = isLiabilityKind(kind);
+  const receivableMode = isReceivableKind(kind);
+  const draftTotal = useMemo(
+    () => drafts.reduce((sum, draft) => sum + (Number(draft.principalRaw) || 0), 0),
+    [drafts],
+  );
 
   useEffect(() => {
     if (!existing) {
@@ -103,44 +112,25 @@ export function AccountFormScreen() {
     }
   }, [kind, existing]);
 
-  const computedInvestmentValue = useMemo(() => {
-    const qty = quantityFromRaw(quantityRaw);
-    const price = Number(priceRaw);
-    if (!quantityRaw || quantityRaw === '.' || !Number.isFinite(price)) return null;
-    return qty * price;
-  }, [quantityRaw, priceRaw]);
-
-  const loadMarketPrice = async () => {
-    const ticker = symbol.trim().toUpperCase();
-    if (!ticker) {
-      Alert.alert('Símbolo requerido', 'Ingresa un ticker (ej. SPY, VOO, BTC-USD).');
-      return;
-    }
-    setFetchingPrice(true);
-    try {
-      const quote = await fetchQuote(ticker);
-      setSymbol(quote.symbol);
-      setPriceRaw(String(quote.price));
-      setPriceCurrency(quote.currency);
-      setPriceUpdatedAt(quote.asOf);
-      setCurrency(quote.currency);
-      if (!name.trim()) setName(quote.symbol);
-    } catch (error) {
-      Alert.alert(
-        'No se pudo actualizar',
-        error instanceof Error ? error.message : 'Error al consultar el precio',
-      );
-    } finally {
-      setFetchingPrice(false);
-    }
-  };
-
   const save = useCallback(() => {
-    const ticker = symbol.trim().toUpperCase();
-    const normalizedName = name.trim() || ticker || provider.trim();
+    const normalizedName = name.trim() || provider.trim();
     if (!normalizedName) {
-      Alert.alert('Nombre requerido', 'Escribe al menos un nombre (o un ticker si es inversión).');
+      Alert.alert('Nombre requerido', 'Escribe el nombre de la cuenta, por ejemplo Hapi o Bancolombia.');
       return;
+    }
+
+    const creatingParts = !existing && receivableMode && !investmentMode && drafts.length > 0;
+    if (creatingParts) {
+      const invalidDraft = drafts.some(
+        (draft) =>
+          !draft.personName.trim() ||
+          !(Number(draft.principalRaw) > 0) ||
+          !dateInputToIso(draft.lentAt),
+      );
+      if (invalidDraft) {
+        Alert.alert('Desglose incompleto', 'Revisa el nombre, el monto y la fecha de cada persona.');
+        return;
+      }
     }
 
     let account: FinanceAccount = {
@@ -148,8 +138,13 @@ export function AccountFormScreen() {
       name: normalizedName,
       provider: provider.trim() || normalizedName,
       kind,
-      balance:
-        existing && !investmentMode ? existing.balance : Math.max(Number(balanceRaw) || 0, 0),
+      balance: investmentMode
+        ? (existing?.balance ?? 0)
+        : existing
+          ? existing.balance
+          : creatingParts
+            ? 0
+            : Math.max(Number(balanceRaw) || 0, 0),
       last4: existing?.last4,
       currency,
       color: existing?.color ?? palette[Math.floor(Math.random() * palette.length)],
@@ -158,41 +153,79 @@ export function AccountFormScreen() {
       excludeFromTotal: excludeFromTotal || undefined,
     };
 
-    if (investmentMode) {
-      const qty = quantityRaw.trim() === '' ? 0 : quantityFromRaw(quantityRaw);
-      const price = priceRaw.trim() === '' ? undefined : Number(priceRaw);
-      account = {
-        ...account,
-        symbol: ticker || undefined,
-        quantity: qty,
-        lastPrice: typeof price === 'number' && Number.isFinite(price) && price >= 0 ? price : undefined,
-        priceCurrency: priceCurrency || currency,
-        priceUpdatedAt,
-      };
-      account = syncInvestmentBalance(account);
+    if (investmentMode && existing && !holdings.some((item) => item.accountId === existing.id)) {
+      if (existing.symbol) account.symbol = existing.symbol;
+      if (typeof existing.quantity === 'number') account.quantity = existing.quantity;
+      if (typeof existing.lastPrice === 'number') account.lastPrice = existing.lastPrice;
+      if (existing.priceCurrency) account.priceCurrency = existing.priceCurrency;
+      if (existing.priceUpdatedAt) account.priceUpdatedAt = existing.priceUpdatedAt;
     }
 
     upsertAccount(account);
+    if (creatingParts) {
+      drafts.forEach((draft, index) => {
+        const lentAt = dateInputToIso(draft.lentAt);
+        const principal = Number(draft.principalRaw);
+        if (!lentAt || !(principal > 0)) return;
+        upsertReceivableDebt({
+          id: `debt_${Date.now()}_${index}`,
+          accountId: account.id,
+          personName: draft.personName.trim(),
+          principal,
+          lentAt,
+          note: draft.note.trim() || undefined,
+          payments: [],
+        });
+      });
+    }
     navigation.goBack();
   }, [
     balanceRaw,
     currency,
+    drafts,
     excludeFromTotal,
     existing,
+    holdings,
     icon,
     investmentMode,
     kind,
     name,
     navigation,
     note,
-    priceCurrency,
-    priceRaw,
-    priceUpdatedAt,
     provider,
-    quantityRaw,
-    symbol,
+    receivableMode,
     upsertAccount,
+    upsertReceivableDebt,
   ]);
+
+  const addDraft = () => {
+    const principal = Number(draftAmount);
+    if (!draftPerson.trim()) {
+      Alert.alert('Nombre requerido', 'Escribe a quién le prestaste.');
+      return;
+    }
+    if (!Number.isFinite(principal) || principal <= 0) {
+      Alert.alert('Monto requerido', 'Escribe cuánto le prestaste.');
+      return;
+    }
+    if (!dateInputToIso(draftDate)) {
+        Alert.alert('Fecha inválida', 'Elige la fecha del préstamo en el calendario.');
+      return;
+    }
+    setDrafts((current) => [
+      ...current,
+      {
+        id: `draft_${Date.now()}_${current.length}`,
+        personName: draftPerson.trim(),
+        principalRaw: draftAmount,
+        lentAt: draftDate,
+        note: draftNote.trim(),
+      },
+    ]);
+    setDraftPerson('');
+    setDraftAmount('');
+    setDraftNote('');
+  };
 
   const confirmDelete = useCallback(() => {
     if (!existing) return;
@@ -254,9 +287,8 @@ export function AccountFormScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 40, 48) }]}
-        keyboardShouldPersistTaps="handled"
       >
         <Text style={[styles.hintTop, { color: theme.textMuted }]}>
           Guarda cuando quieras con ✓ arriba. El resto de campos es opcional.
@@ -267,7 +299,7 @@ export function AccountFormScreen() {
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder="Ej. Bancolombia, Efectivo, SPY"
+            placeholder={investmentMode ? 'Ej. Hapi, XTB, Trii' : 'Ej. Bancolombia, Efectivo'}
             placeholderTextColor={theme.textMuted}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
             autoFocus={!existing}
@@ -283,6 +315,16 @@ export function AccountFormScreen() {
             <Text style={[styles.selectText, { color: theme.text }]}>{ACCOUNT_KIND_LABELS[kind]}</Text>
             <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
           </Pressable>
+          {receivableMode ? (
+            <Text style={[styles.hint, { color: theme.textMuted }]}>
+              Puedes repartir el total entre las personas que te deben. Cada préstamo guarda su fecha y, después, sus abonos.
+            </Text>
+          ) : null}
+          {investmentMode ? (
+            <Text style={[styles.hint, { color: theme.textMuted }]}>
+              Esta cuenta es el bróker, por ejemplo Hapi, XTB o Trii. Las acciones y las fracciones se agregan dentro, al abrirla.
+            </Text>
+          ) : null}
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Moneda</Text>
           <View style={styles.chipRow}>
@@ -310,83 +352,137 @@ export function AccountFormScreen() {
 
           {investmentMode ? (
             <>
-              <Text style={[styles.label, { color: theme.textMuted }]}>Símbolo (ticker)</Text>
-              <View style={styles.row}>
-                <TextInput
-                  value={symbol}
-                  onChangeText={setSymbol}
-                  autoCapitalize="characters"
-                  placeholder="SPY, VOO, AAPL, BTC-USD"
-                  placeholderTextColor={theme.textMuted}
-                  style={[styles.input, styles.flex, { color: theme.text, borderColor: theme.border }]}
-                />
-                <Pressable
-                  onPress={loadMarketPrice}
-                  disabled={fetchingPrice}
-                  style={[styles.refreshBtn, { backgroundColor: theme.primary }]}
-                >
-                  {fetchingPrice ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Ionicons name="refresh" size={20} color="#fff" />
-                  )}
-                </Pressable>
-              </View>
-
-              <Text style={[styles.label, { color: theme.textMuted }]}>
-                Cantidad (acciones o fracciones)
+              <Text style={[styles.hint, { color: theme.textMuted }]}>
+                El valor de la cuenta es la suma de sus acciones. Guarda y ábrela para anotar cada ticker y su cantidad.
               </Text>
-              <View style={styles.row}>
-                <TextInput
-                  value={formatQuantityInput(quantityRaw)}
-                  onChangeText={(value) => setQuantityRaw(parseQuantityInput(value))}
-                  keyboardType="decimal-pad"
-                  placeholder="Ej. 0,25"
-                  placeholderTextColor={theme.textMuted}
-                  style={[styles.input, styles.flex, { color: theme.text, borderColor: theme.border }]}
-                />
+              {existing && isInvestmentKind(existing.kind) ? (
                 <Pressable
                   onPress={() =>
-                    setQuantityRaw((prev) => (prev.includes('.') ? prev : `${prev || '0'}.`))
+                    (navigation as { navigate: (name: string, params: { accountId: string }) => void }).navigate(
+                      'AccountDetail',
+                      { accountId: existing.id },
+                    )
                   }
-                  style={[styles.decimalBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  style={[styles.draftAdd, { backgroundColor: theme.primary }]}
                   accessibilityRole="button"
-                  accessibilityLabel="Insertar coma decimal"
+                  accessibilityLabel="Ver acciones de esta cuenta"
                 >
-                  <Text style={[styles.decimalBtnText, { color: theme.text }]}>,</Text>
+                  <Text style={styles.draftAddText}>Ver acciones</Text>
                 </Pressable>
-              </View>
-              <Text style={[styles.hint, { color: theme.textMuted }]}>
-                Puedes guardar una fracción, como 0,25 de SPY. Si el teclado no trae coma, tócala al lado.
-              </Text>
-
-              <Text style={[styles.label, { color: theme.textMuted }]}>
-                Precio unitario ({priceCurrency || currency})
-              </Text>
-              <TextInput
-                value={formatAmountInput(priceRaw, priceCurrency || 'USD')}
-                onChangeText={(value) => setPriceRaw(parseAmountInput(value, priceCurrency || 'USD'))}
-                keyboardType="decimal-pad"
-                placeholder="Opcional · se rellena al actualizar"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-              />
-              {priceUpdatedAt ? (
-                <Text style={[styles.hint, { color: theme.textMuted }]}>
-                  Actualizado: {new Date(priceUpdatedAt).toLocaleString('es-CO')}
-                </Text>
-              ) : null}
-              {computedInvestmentValue != null ? (
-                <Text style={[styles.valuePreview, { color: theme.text }]}>
-                  Valor a la fecha:{' '}
-                  {formatMoney(computedInvestmentValue, priceCurrency || currency)}
-                </Text>
               ) : null}
             </>
           ) : existing ? (
-            <Text style={[styles.hint, { color: theme.textMuted }]}>
-              El saldo se ajusta desde el historial de la cuenta, con el lápiz junto al importe.
-            </Text>
+            <>
+              <Text style={[styles.hint, { color: theme.textMuted }]}>
+                El saldo se ajusta desde el historial de la cuenta, con el lápiz junto al importe.
+              </Text>
+              {receivableMode && isReceivableKind(existing.kind) ? (
+                <Pressable
+                  onPress={() =>
+                    (navigation as { navigate: (name: string, params: { accountId: string }) => void }).navigate(
+                      'AccountDetail',
+                      { accountId: existing.id },
+                    )
+                  }
+                  style={[styles.draftAdd, { backgroundColor: theme.primary }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Organizar deudas y abonos"
+                >
+                  <Text style={styles.draftAddText}>Organizar deudas y abonos</Text>
+                </Pressable>
+              ) : receivableMode ? (
+                <Text style={[styles.hint, { color: theme.textMuted }]}>
+                  Guarda la cuenta como dinero que te deben y ábrela para repartir el saldo por persona.
+                </Text>
+              ) : null}
+            </>
+          ) : receivableMode ? (
+            <>
+              <Text style={[styles.label, { color: theme.textMuted }]}>Persona</Text>
+              <TextInput
+                value={draftPerson}
+                onChangeText={setDraftPerson}
+                placeholder="Ej. Yuli"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+              />
+              <Text style={[styles.label, { color: theme.textMuted }]}>Monto prestado</Text>
+              <TextInput
+                value={formatAmountInput(draftAmount, currency)}
+                onChangeText={(value) => setDraftAmount(parseAmountInput(value, currency))}
+                keyboardType="decimal-pad"
+                placeholder="400000"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+              />
+              <Text style={[styles.label, { color: theme.textMuted }]}>Fecha del préstamo</Text>
+              <DateField
+                value={draftDate}
+                onChange={setDraftDate}
+                accessibilityLabel="Elegir la fecha del préstamo"
+              />
+              <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
+              <TextInput
+                value={draftNote}
+                onChangeText={setDraftNote}
+                placeholder="Préstamo personal"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+              />
+              <Pressable
+                onPress={addDraft}
+                style={[styles.draftAdd, { backgroundColor: theme.primary }]}
+                accessibilityRole="button"
+                accessibilityLabel="Agregar al desglose"
+              >
+                <Text style={styles.draftAddText}>Agregar al desglose</Text>
+              </Pressable>
+              {drafts.map((draft) => {
+                const lentAt = dateInputToIso(draft.lentAt);
+                return (
+                  <View key={draft.id} style={[styles.draftRow, { borderColor: theme.border }]}>
+                    <View style={styles.flex}>
+                      <Text style={[styles.draftName, { color: theme.text }]}>{draft.personName}</Text>
+                      <Text style={[styles.hint, { color: theme.textMuted, marginBottom: 0 }]}>
+                        {formatMoney(Number(draft.principalRaw) || 0, currency)}
+                        {lentAt ? ` · ${formatCalendarDate(lentAt)}` : ''}
+                        {draft.note ? ` · ${draft.note}` : ''}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => setDrafts((current) => current.filter((item) => item.id !== draft.id))}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Quitar a ${draft.personName}`}
+                    >
+                      <Ionicons name="close" size={18} color={theme.textMuted} />
+                    </Pressable>
+                  </View>
+                );
+              })}
+              {drafts.length > 0 ? (
+                <Text style={[styles.valuePreview, { color: theme.text }]}>
+                  Total por cobrar: {formatMoney(draftTotal, currency)}
+                </Text>
+              ) : (
+                <>
+                  <Text style={[styles.label, { color: theme.textMuted }]}>
+                    Total por cobrar, sin desglosar (opcional)
+                  </Text>
+                  <TextInput
+                    value={formatAmountInput(balanceRaw, currency)}
+                    onChangeText={(value) => setBalanceRaw(parseAmountInput(value, currency))}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={theme.textMuted}
+                    style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+                  />
+                  <Text style={[styles.hint, { color: theme.textMuted }]}>
+                    Si aún no quieres dividirlo, deja aquí el total. Podrás asignar personas desde el detalle de la cuenta.
+                  </Text>
+                </>
+              )}
+            </>
           ) : (
             <>
               <Text style={[styles.label, { color: theme.textMuted }]}>
@@ -452,7 +548,7 @@ export function AccountFormScreen() {
             style={[styles.input, { color: theme.text, borderColor: theme.border, marginBottom: 0 }]}
           />
         </PremiumCard>
-      </ScrollView>
+      </KeyboardSafeScroll>
 
       <Modal visible={kindPickerOpen} animationType="slide" transparent onRequestClose={() => setKindPickerOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setKindPickerOpen(false)}>
@@ -580,6 +676,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   decimalBtnText: { fontSize: 22, fontWeight: '700', lineHeight: 24 },
+  draftAdd: {
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  draftAddText: { color: '#fff', fontWeight: '800' },
+  draftRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  draftName: { fontSize: 14, fontWeight: '800' },
   valuePreview: { fontWeight: '800', fontSize: 16, marginBottom: 12 },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   iconBtn: {

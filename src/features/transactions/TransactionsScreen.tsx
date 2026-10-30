@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ConfirmModal, PremiumCard, Screen } from "../../components/ui";
+import { KeyboardSafeScroll } from "../../components/KeyboardSafeScroll";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from "../../core/utils/format";
 import { isBalanceAdjustment } from "../../domain/accounts";
@@ -167,7 +168,7 @@ export function TransactionsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      <KeyboardSafeScroll
         contentContainerStyle={[
           styles.container,
           { paddingBottom: Math.max(insets.bottom + 170, 190) },
@@ -452,7 +453,7 @@ export function TransactionsScreen() {
             </Text>
           </PremiumCard>
         ) : null}
-      </ScrollView>
+      </KeyboardSafeScroll>
 
       <QuickAddTransactionModal
         open={modalOpen}

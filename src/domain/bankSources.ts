@@ -79,6 +79,26 @@ export const resolveBankSources = (
   };
 };
 
+/**
+ * Paquetes a escuchar: los de las fuentes activas, más extras que no sean un banco conocido.
+ * Así un ajuste guardado antes de agregar Nu o Nequi no se queda solo con Wallet.
+ */
+export const mergeWatchedPackages = (
+  enabledIds: string[] | undefined,
+  persistedPackages: unknown,
+): string[] => {
+  const resolved = resolveBankSources(enabledIds);
+  const known = new Set(BANK_SOURCE_PRESETS.flatMap((preset) => preset.packages));
+  const extras = Array.isArray(persistedPackages)
+    ? persistedPackages.filter(
+        (pkg): pkg is string =>
+          typeof pkg === 'string' && pkg.trim().length > 0 && !known.has(pkg.trim()),
+      )
+    : [];
+  const packages = [...new Set([...resolved.packages, ...extras.map((pkg) => pkg.trim())])];
+  return packages.length > 0 ? packages : [...DEFAULT_NOTIFICATION_PACKAGES];
+};
+
 export const packageDisplayName = (packageName: string): string => {
   const preset = BANK_SOURCE_PRESETS.find((p) => p.packages.includes(packageName));
   if (preset) return preset.label;

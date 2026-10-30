@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,11 +12,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { convertToBase, getExchangeRates } from '../../backend/exchangeRates';
 import { PremiumCard, Screen } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
   formatAmountInput,
-  formatQuantity,
   getCurrencyFractionDigits,
   monthKey,
   monthKeyFromIso,
@@ -31,9 +30,13 @@ import {
   isBalanceAdjustment,
   isInvestmentKind,
   isLiabilityKind,
+  isReceivableKind,
 } from '../../domain/accounts';
+import { summarizePositions } from '../../domain/investments';
 import { FinanceAccount, Transaction } from '../../domain/models';
 import { QuickAddTransactionModal } from '../transactions/QuickAddTransactionModal';
+import { InvestmentLedger } from './InvestmentLedger';
+import { ReceivableLedger } from './ReceivableLedger';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 type DetailRoute = RouteProp<{ AccountDetail: { accountId: string } }, 'AccountDetail'>;
@@ -87,6 +90,7 @@ export function AccountDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<DetailRoute>();
   const accounts = useFinanceStore((state) => state.accounts);
+  const holdings = useFinanceStore((state) => state.holdings);
   const transactions = useFinanceStore((state) => state.transactions);
   const settingsCurrency = useFinanceStore((state) => state.settings.currency);
   const addTransaction = useFinanceStore((state) => state.addTransaction);
@@ -95,8 +99,24 @@ export function AccountDetailScreen() {
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => monthKey());
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustRaw, setAdjustRaw] = useState('');
+  const [adjustKeyboard, setAdjustKeyboard] = useState(0);
   const [composeOpen, setComposeOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!adjustOpen) {
+      setAdjustKeyboard(0);
+      return;
+    }
+    // Android ya encoge la ventana hasta el teclado. Solo hace falta un margen corto.
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setAdjustKeyboard(20));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setAdjustKeyboard(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [adjustOpen]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -116,9 +136,35 @@ export function AccountDetailScreen() {
     });
   }, [account, navigation, theme.text]);
 
-  const currency = account ? getAccountDisplayCurrency(account) : settingsCurrency;
-  const balance = account ? getAccountDisplayValue(account) : 0;
   const investment = account ? isInvestmentKind(account.kind) : false;
+  const receivable = account ? isReceivableKind(account.kind) : false;
+
+  useEffect(() => {
+    if (!investment) return;
+    let cancelled = false;
+    getExchangeRates(settingsCurrency)
+      .then((result) => {
+        if (!cancelled) setRates(result);
+      })
+      .catch(() => {
+        if (!cancelled) setRates({ [settingsCurrency]: 1 });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [investment, settingsCurrency]);
+
+  const portfolio = useMemo(() => {
+    if (!account || !investment) return null;
+    const toBase = rates
+      ? (amount: number, currencyCode: string) =>
+          convertToBase(amount, currencyCode, settingsCurrency, rates) ?? 0
+      : undefined;
+    return summarizePositions(account, holdings, toBase, settingsCurrency);
+  }, [account, holdings, investment, rates, settingsCurrency]);
+
+  const currency = portfolio?.currency ?? (account ? getAccountDisplayCurrency(account) : settingsCurrency);
+  const balance = portfolio?.amount ?? (account ? getAccountDisplayValue(account) : 0);
   const currentMonthKey = monthKey();
   const previousMonthKey = shiftMonthKey(selectedMonthKey, -1);
   const nextMonthKey = shiftMonthKey(selectedMonthKey, 1);
@@ -259,20 +305,36 @@ export function AccountDetailScreen() {
               onPress={openAdjust}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Ajustar saldo"
+              accessibilityLabel={investment ? 'Editar cuenta' : 'Ajustar saldo'}
             >
               <Ionicons name="pencil" size={16} color={theme.textMuted} />
             </Pressable>
           </View>
           {investment ? (
             <Text style={[styles.heroHint, { color: theme.textMuted }]}>
-              {account.symbol
-                ? `${formatQuantity(account.quantity ?? 0)} × ${account.symbol}. `
+              {portfolio && portfolio.positionCount > 0
+                ? `${portfolio.positionCount === 1 ? '1 acción' : `${portfolio.positionCount} acciones`}${
+                    portfolio.mixed ? ' en varias monedas' : ''
+                  }. `
                 : ''}
-              El valor sale de la cantidad por el precio. El lápiz abre la edición.
+              El valor es la suma de las acciones de esta cuenta. El lápiz edita el bróker, no cada posición.
+            </Text>
+          ) : null}
+          {receivable ? (
+            <Text style={[styles.heroHint, { color: theme.textMuted }]}>
+              Este saldo es el total que te deben. El desglose reparte ese total por persona, con la fecha del préstamo y cada abono.
             </Text>
           ) : null}
         </PremiumCard>
+
+        {receivable ? <ReceivableLedger account={account} /> : null}
+        {investment ? <InvestmentLedger account={account} /> : null}
+
+        {receivable ? (
+          <Text style={[styles.heroHint, { color: theme.textMuted, marginBottom: 8 }]}>
+            Los abonos viven en cada persona del desglose. Aquí solo quedan los ajustes y las transferencias de la cuenta.
+          </Text>
+        ) : null}
 
         <View style={styles.monthHeader}>
           <Text style={[styles.monthTitle, { color: theme.text }]}>
@@ -387,15 +449,21 @@ export function AccountDetailScreen() {
       />
 
       <Modal visible={adjustOpen} transparent animationType="fade" onRequestClose={() => setAdjustOpen(false)}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalBackdrop}
+        <Pressable
+          style={[
+            styles.modalBackdrop,
+            adjustKeyboard > 0 && styles.modalAboveKeyboard,
+            {
+              paddingTop: insets.top + 12,
+              paddingBottom: adjustKeyboard > 0 ? adjustKeyboard : Math.max(insets.bottom, 24),
+            },
+          ]}
+          onPress={() => setAdjustOpen(false)}
         >
-          <Pressable style={styles.modalBackdrop} onPress={() => setAdjustOpen(false)}>
-            <Pressable
-              style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => undefined}
-            >
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => undefined}
+          >
               <Text style={[styles.modalTitle, { color: theme.text }]}>Ajustar saldo</Text>
               <Text style={[styles.modalHint, { color: theme.textMuted }]}>
                 Escribe el saldo real. La diferencia queda en el historial como “Ajustar importe”.
@@ -422,9 +490,8 @@ export function AccountDetailScreen() {
                   <Text style={[styles.modalActionText, { color: '#fff' }]}>Guardar</Text>
                 </Pressable>
               </View>
-            </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </Pressable>
       </Modal>
     </Screen>
   );
@@ -517,8 +584,11 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 16,
     backgroundColor: 'rgba(2, 6, 23, 0.72)',
+  },
+  modalAboveKeyboard: {
+    justifyContent: 'flex-end',
   },
   modalCard: {
     borderWidth: 1,

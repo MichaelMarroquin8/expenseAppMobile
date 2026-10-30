@@ -21,6 +21,7 @@ import {
   getUnitsOfBasePerOne,
 } from '../../backend/exchangeRates';
 import { ConfirmModal } from '../../components/ui';
+import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { findCurrency } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
@@ -34,12 +35,26 @@ import {
   defaultIconForKind,
   getAccountDisplayCurrency,
   getAccountDisplayValue,
+  isInvestmentKind,
   isLiabilityKind,
   type AccountMovementRole,
 } from '../../domain/accounts';
-import { Transaction } from '../../domain/models';
+import { summarizePositions } from '../../domain/investments';
+import { FinanceAccount, Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
+
+const accountMoneyLabel = (account: FinanceAccount, holdings: Parameters<typeof summarizePositions>[1]): string => {
+  if (!isInvestmentKind(account.kind)) {
+    return formatMoney(getAccountDisplayValue(account), getAccountDisplayCurrency(account));
+  }
+  const summary = summarizePositions(account, holdings);
+  if (summary.positionCount === 0) {
+    return formatMoney(summary.amount, summary.currency);
+  }
+  if (summary.mixed) return 'Varias monedas';
+  return formatMoney(summary.amount, summary.currency);
+};
 
 interface QuickAddTransactionModalProps {
   open: boolean;
@@ -127,6 +142,7 @@ export function QuickAddTransactionModal({
   const incomeCategories = useFinanceStore((state) => state.incomeCategories);
   const categoryIcons = useFinanceStore((state) => state.categoryIcons);
   const accounts = useFinanceStore((state) => state.accounts);
+  const holdings = useFinanceStore((state) => state.holdings);
   const cards = useFinanceStore((state) => state.cards);
   const addTransactionCategory = useFinanceStore((state) => state.addTransactionCategory);
   const removeTransactionCategory = useFinanceStore((state) => state.removeTransactionCategory);
@@ -653,7 +669,7 @@ export function QuickAddTransactionModal({
               {account.name}
             </Text>
             <Text style={[styles.transferBalance, { color: theme.textMuted }]} numberOfLines={1}>
-              {formatMoney(getAccountDisplayValue(account), getAccountDisplayCurrency(account))}
+              {accountMoneyLabel(account, holdings)}
             </Text>
           </>
         ) : (
@@ -751,9 +767,8 @@ export function QuickAddTransactionModal({
           </View>
 
           {step === 'category' ? (
-            <ScrollView
+            <KeyboardSafeScroll
               style={styles.stepScroll}
-              keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
             >
@@ -833,11 +848,10 @@ export function QuickAddTransactionModal({
                   <Text style={styles.primaryButtonText}>Agregar</Text>
                 </Pressable>
               </View>
-            </ScrollView>
+            </KeyboardSafeScroll>
           ) : (
-            <ScrollView
+            <KeyboardSafeScroll
               style={styles.stepScroll}
-              keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
             >
@@ -887,7 +901,7 @@ export function QuickAddTransactionModal({
                             </Text>
                             <Text style={[styles.transferBalance, { color: theme.textMuted }]} numberOfLines={1}>
                               {isLiabilityKind(account.kind) ? 'Dinero que debo · ' : ''}
-                              {formatMoney(getAccountDisplayValue(account), getAccountDisplayCurrency(account))}
+                              {accountMoneyLabel(account, holdings)}
                             </Text>
                           </View>
                         </Pressable>
@@ -1093,7 +1107,7 @@ export function QuickAddTransactionModal({
               </View>
               </>
               ) : null}
-            </ScrollView>
+            </KeyboardSafeScroll>
           )}
 
           {step === 'amount' && showAmountEntry ? (

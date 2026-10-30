@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import {
+  extractCardLast4,
   parseSms,
   isLikelyDuplicate,
   isSameAmountAndInstant,
@@ -13,21 +14,40 @@ import {
   NotificationRawInput,
   parseWalletNotification,
 } from '../domain/notificationParser';
-import { clampAccountBalance, isLiabilityKind } from '../domain/accounts';
+import { clampAccountBalance, isInvestmentKind, isLiabilityKind, isReceivableKind } from '../domain/accounts';
+import {
+  absorbLegacyPositions,
+  normalizeInvestmentHolding,
+  sanitizeInvestmentHolding,
+  syncInvestmentAccount,
+} from '../domain/investments';
 import {
   AccountKind,
   AppSettings,
   Budget,
   FinanceAccount,
+  InvestmentHolding,
   PaymentCard,
+  ReceivableDebt,
+  ReceivablePayment,
   SavingsGoal,
   SmsDetection,
   Transaction,
 } from '../domain/models';
 import {
+  debtOutstanding,
+  debtsForAccount,
+  normalizeReceivableDebt,
+  reconcileReceivableBalance,
+  roundMoney,
+  sanitizeReceivableDebt,
+  sumOutstanding,
+} from '../domain/receivables';
+import {
   DEFAULT_BANK_SMS_SHORT_CODES,
   DEFAULT_ENABLED_BANK_SOURCE_IDS,
   DEFAULT_NOTIFICATION_PACKAGES,
+  mergeWatchedPackages,
   resolveBankSources,
 } from '../domain/bankSources';
 
@@ -116,6 +136,8 @@ interface FinanceState {
   incomeCategories: string[];
   categoryIcons: Record<string, string>;
   accounts: FinanceAccount[];
+  receivables: ReceivableDebt[];
+  holdings: InvestmentHolding[];
   budgets: Budget[];
   goals: SavingsGoal[];
   cards: PaymentCard[];
@@ -128,6 +150,19 @@ interface FinanceState {
   setCategoryIcon: (category: string, icon: string) => void;
   upsertAccount: (account: FinanceAccount) => void;
   deleteAccount: (id: string) => void;
+  upsertHolding: (holding: InvestmentHolding) => void;
+  deleteHolding: (id: string) => void;
+  applyMarketQuotes: (
+    quotes: Array<{ symbol: string; price: number; currency: string; asOf: string }>,
+  ) => void;
+  upsertReceivableDebt: (debt: ReceivableDebt) => void;
+  deleteReceivableDebt: (id: string) => void;
+  addReceivablePayment: (
+    debtId: string,
+    payment: Omit<ReceivablePayment, 'id'>,
+  ) => void;
+  deleteReceivablePayment: (debtId: string, paymentId: string) => void;
+  alignReceivableBalance: (accountId: string) => void;
   updateTransaction: (id: string, payload: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   setBudget: (budget: Budget) => void;
@@ -194,6 +229,20 @@ const initialSettings: AppSettings = {
 
 const createId = (prefix: string) => `${prefix}_${Date.now()}_${Math.round(Math.random() * 1000)}`;
 
+const syncReceivableAccounts = (
+  accounts: FinanceAccount[],
+  accountId: string,
+  previous: ReceivableDebt[],
+  next: ReceivableDebt[],
+): FinanceAccount[] =>
+  accounts.map((account) => {
+    if (account.id !== accountId || !isReceivableKind(account.kind)) return account;
+    return {
+      ...account,
+      balance: reconcileReceivableBalance(account.balance, previous, next),
+    };
+  });
+
 const coerceBoolean = (value: unknown, fallback: boolean): boolean => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') return value.toLowerCase() === 'true';
@@ -214,6 +263,7 @@ const applyAccountMovement = (
     if (!transaction.accountId || !transaction.destinationAccountId) return accounts;
     const factor = mode === 'apply' ? 1 : -1;
     return accounts.map((account) => {
+      if (isInvestmentKind(account.kind)) return account;
       if (account.id === transaction.accountId) {
         // Salida de pasivo = más deuda (avance); salida de activo = menos saldo.
         const delta = isLiabilityKind(account.kind)
@@ -240,7 +290,7 @@ const applyAccountMovement = (
 
   if (!transaction.accountId) return accounts;
   return accounts.map((account) => {
-    if (account.id !== transaction.accountId) return account;
+    if (account.id !== transaction.accountId || isInvestmentKind(account.kind)) return account;
     // En pasivos (TC), un gasto aumenta la deuda; un ingreso/pago la reduce.
     let direction = transaction.type === 'expense' ? -1 : 1;
     if (isLiabilityKind(account.kind)) {
@@ -263,6 +313,8 @@ export const useFinanceStore = create<FinanceState>()(
       incomeCategories: defaultIncomeCategories,
       categoryIcons: defaultCategoryIcons,
       accounts: [],
+      receivables: [],
+      holdings: [],
       budgets: [],
       goals: [],
       cards: [],
@@ -327,12 +379,164 @@ export const useFinanceStore = create<FinanceState>()(
           },
         })),
       upsertAccount: (account) =>
-        set((state) => ({
-          accounts: [...state.accounts.filter((item) => item.id !== account.id), account],
-        })),
+        set((state) => {
+          const holdings = isInvestmentKind(account.kind)
+            ? state.holdings
+            : state.holdings.filter((item) => item.accountId !== account.id);
+          const stored = isInvestmentKind(account.kind)
+            ? syncInvestmentAccount(account, holdings)
+            : account;
+          return {
+            holdings,
+            accounts: [...state.accounts.filter((item) => item.id !== account.id), stored],
+          };
+        }),
       deleteAccount: (id) =>
         set((state) => ({
           accounts: state.accounts.filter((item) => item.id !== id),
+          receivables: state.receivables.filter((debt) => debt.accountId !== id),
+          holdings: state.holdings.filter((holding) => holding.accountId !== id),
+        })),
+      upsertHolding: (holding) =>
+        set((state) => {
+          const normalized = normalizeInvestmentHolding(holding);
+          if (!normalized) return state;
+          const account = state.accounts.find((item) => item.id === normalized.accountId);
+          if (!account || !isInvestmentKind(account.kind)) return state;
+          const holdings = [
+            ...state.holdings.filter((item) => item.id !== normalized.id),
+            normalized,
+          ];
+          return {
+            holdings,
+            accounts: state.accounts.map((item) =>
+              item.id === account.id ? syncInvestmentAccount(item, holdings) : item,
+            ),
+          };
+        }),
+      deleteHolding: (id) =>
+        set((state) => {
+          const holding = state.holdings.find((item) => item.id === id);
+          if (!holding) return state;
+          const holdings = state.holdings.filter((item) => item.id !== id);
+          const stillThere = holdings.some((item) => item.accountId === holding.accountId);
+          return {
+            holdings,
+            accounts: state.accounts.map((item) => {
+              if (item.id !== holding.accountId) return item;
+              if (stillThere) return syncInvestmentAccount(item, holdings);
+              const cleared: FinanceAccount = { ...item, balance: 0 };
+              delete cleared.symbol;
+              delete cleared.quantity;
+              delete cleared.lastPrice;
+              delete cleared.priceCurrency;
+              delete cleared.priceUpdatedAt;
+              return cleared;
+            }),
+          };
+        }),
+      applyMarketQuotes: (quotes) =>
+        set((state) => {
+          const bySymbol = new Map(quotes.map((quote) => [quote.symbol.trim().toUpperCase(), quote]));
+          const holdings = state.holdings.map((holding) => {
+            const quote = bySymbol.get(holding.symbol.trim().toUpperCase());
+            if (!quote) return holding;
+            return {
+              ...holding,
+              symbol: quote.symbol.trim().toUpperCase(),
+              lastPrice: quote.price,
+              priceCurrency: quote.currency.toUpperCase(),
+              priceUpdatedAt: quote.asOf,
+            };
+          });
+          return {
+            holdings,
+            accounts: state.accounts.map((account) =>
+              isInvestmentKind(account.kind) ? syncInvestmentAccount(account, holdings) : account,
+            ),
+          };
+        }),
+      upsertReceivableDebt: (debt) =>
+        set((state) => {
+          const normalized = normalizeReceivableDebt(debt);
+          if (!normalized) return state;
+          const account = state.accounts.find((item) => item.id === normalized.accountId);
+          if (!account || !isReceivableKind(account.kind)) return state;
+          const previous = debtsForAccount(state.receivables, normalized.accountId);
+          const next = [...previous.filter((item) => item.id !== normalized.id), normalized];
+          return {
+            receivables: [
+              ...state.receivables.filter((item) => item.accountId !== normalized.accountId),
+              ...next,
+            ],
+            accounts: syncReceivableAccounts(state.accounts, normalized.accountId, previous, next),
+          };
+        }),
+      deleteReceivableDebt: (id) =>
+        set((state) => {
+          const debt = state.receivables.find((item) => item.id === id);
+          if (!debt) return state;
+          const previous = debtsForAccount(state.receivables, debt.accountId);
+          const next = previous.filter((item) => item.id !== id);
+          return {
+            receivables: state.receivables.filter((item) => item.id !== id),
+            accounts: syncReceivableAccounts(state.accounts, debt.accountId, previous, next),
+          };
+        }),
+      addReceivablePayment: (debtId, payment) =>
+        set((state) => {
+          const debt = state.receivables.find((item) => item.id === debtId);
+          if (!debt) return state;
+          const amount = roundMoney(payment.amount);
+          const outstanding = debtOutstanding(debt);
+          if (!(amount > 0) || amount - outstanding > 0.009) return state;
+          if (typeof payment.occurredAt !== 'string' || Number.isNaN(new Date(payment.occurredAt).getTime())) {
+            return state;
+          }
+          const stored: ReceivablePayment = {
+            id: createId('abono'),
+            amount,
+            occurredAt: payment.occurredAt,
+          };
+          if (payment.note?.trim()) stored.note = payment.note.trim();
+          const updated: ReceivableDebt = { ...debt, payments: [...debt.payments, stored] };
+          const previous = debtsForAccount(state.receivables, debt.accountId);
+          const next = previous.map((item) => (item.id === debt.id ? updated : item));
+          return {
+            receivables: [
+              ...state.receivables.filter((item) => item.accountId !== debt.accountId),
+              ...next,
+            ],
+            accounts: syncReceivableAccounts(state.accounts, debt.accountId, previous, next),
+          };
+        }),
+      deleteReceivablePayment: (debtId, paymentId) =>
+        set((state) => {
+          const debt = state.receivables.find((item) => item.id === debtId);
+          if (!debt || !debt.payments.some((item) => item.id === paymentId)) return state;
+          const updated: ReceivableDebt = {
+            ...debt,
+            payments: debt.payments.filter((item) => item.id !== paymentId),
+          };
+          const previous = debtsForAccount(state.receivables, debt.accountId);
+          const next = previous.map((item) => (item.id === debt.id ? updated : item));
+          return {
+            receivables: [
+              ...state.receivables.filter((item) => item.accountId !== debt.accountId),
+              ...next,
+            ],
+            accounts: syncReceivableAccounts(state.accounts, debt.accountId, previous, next),
+          };
+        }),
+      alignReceivableBalance: (accountId) =>
+        set((state) => ({
+          accounts: state.accounts.map((account) => {
+            if (account.id !== accountId || !isReceivableKind(account.kind)) return account;
+            return {
+              ...account,
+              balance: sumOutstanding(debtsForAccount(state.receivables, accountId)),
+            };
+          }),
         })),
       updateTransaction: (id, payload) =>
         set((state) => {
@@ -455,13 +659,17 @@ export const useFinanceStore = create<FinanceState>()(
           const detection = state.smsDetections.find((item) => item.id === detectionId);
           if (!detection || !detection.amount || detection.amount <= 0) return state;
 
+          const resolvedLast4 = detection.accountLast4
+            ? undefined
+            : detection.last4 ?? extractCardLast4(detection.rawMessage);
           const linkedCard = detection.accountLast4
             ? undefined
-            : detection.cardId
-              ? state.cards.find((card) => card.id === detection.cardId)
-              : detection.last4
-                ? state.cards.find((card) => card.last4 === detection.last4)
-                : undefined;
+            : (detection.cardId
+                ? state.cards.find((card) => card.id === detection.cardId)
+                : undefined) ??
+              (resolvedLast4
+                ? state.cards.find((card) => card.last4 === resolvedLast4)
+                : undefined);
           const accountFromMask = detection.accountLast4
             ? state.accounts.find((account) => account.last4 === detection.accountLast4) ??
               state.accounts.find((account) =>
@@ -475,12 +683,12 @@ export const useFinanceStore = create<FinanceState>()(
           const fromNotification = detection.channel === 'notification';
           const transaction: Transaction = {
             id: createId('tx'),
-            type: 'expense',
+            type: detection.direction === 'in' ? 'income' : 'expense',
             amount: detection.amount,
             currency: state.settings.currency,
             category: detection.categoryGuess ?? 'Otros',
             tags: [
-              ...(fromNotification ? ['wallet', 'notification'] : ['sms']),
+              ...(fromNotification ? [detection.bank ?? 'wallet', 'notification'] : ['sms']),
               ...(detection.accountLast4 ? ['transferencia'] : []),
             ],
             paymentMethod: linkedCard ? 'card' : 'transfer',
@@ -565,13 +773,10 @@ export const useFinanceStore = create<FinanceState>()(
               : resolved.shortCodes.length > 0
                 ? resolved.shortCodes
                 : [...DEFAULT_BANK_SMS_SHORT_CODES],
-          notificationPackages:
-            Array.isArray(persistedSettings.notificationPackages) &&
-            persistedSettings.notificationPackages.length > 0
-              ? persistedSettings.notificationPackages.filter((p) => typeof p === 'string')
-              : resolved.packages.length > 0
-                ? resolved.packages
-                : [...DEFAULT_NOTIFICATION_PACKAGES],
+          notificationPackages: mergeWatchedPackages(
+            resolved.enabledIds,
+            persistedSettings.notificationPackages,
+          ),
           bridgeDebugEnabled: coerceBoolean(
             persistedSettings.bridgeDebugEnabled,
             currentState.settings.bridgeDebugEnabled,
@@ -611,14 +816,32 @@ export const useFinanceStore = create<FinanceState>()(
             ...defaultCategoryIcons,
             ...((persisted.categoryIcons as Record<string, string> | undefined) ?? {}),
           },
-          accounts: unionById(
-            currentState.accounts,
-            Array.isArray(persisted.accounts)
-              ? persisted.accounts
-                  .map(sanitizeAccount)
-                  .filter((item): item is FinanceAccount => item != null)
-              : [],
-          ),
+          ...(() => {
+            const portfolio = absorbLegacyPositions(
+              unionById(
+                currentState.accounts,
+                Array.isArray(persisted.accounts)
+                  ? persisted.accounts
+                      .map(sanitizeAccount)
+                      .filter((item): item is FinanceAccount => item != null)
+                  : [],
+              ),
+              Array.isArray(persisted.holdings)
+                ? persisted.holdings
+                    .map((item) => sanitizeInvestmentHolding(item))
+                    .filter((item): item is InvestmentHolding => item != null)
+                : [],
+            );
+            return {
+              accounts: portfolio.accounts,
+              holdings: portfolio.holdings,
+            };
+          })(),
+          receivables: Array.isArray(persisted.receivables)
+            ? persisted.receivables
+                .map((item) => sanitizeReceivableDebt(item))
+                .filter((item): item is ReceivableDebt => item != null)
+            : [],
           settings: safeSettings,
         };
       },
@@ -629,6 +852,8 @@ export const useFinanceStore = create<FinanceState>()(
         incomeCategories: state.incomeCategories,
         categoryIcons: state.categoryIcons,
         accounts: state.accounts,
+        receivables: state.receivables,
+        holdings: state.holdings,
         budgets: state.budgets,
         goals: state.goals,
         cards: state.cards,
