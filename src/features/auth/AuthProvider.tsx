@@ -15,7 +15,7 @@ import { firebaseAuth, firebaseDb, isFirebaseConfigured } from '../../backend/fi
 import { absorbLegacyPositions, sanitizeInvestmentHolding } from '../../domain/investments';
 import { InvestmentHolding, ReceivableDebt, Transaction } from '../../domain/models';
 import { sanitizeReceivableDebt } from '../../domain/receivables';
-import { reconcileDetections } from '../../domain/smsParser';
+import { capDetections, reconcileDetections } from '../../domain/smsParser';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export type CloudSyncStatus = 'unknown' | 'checking' | 'synced' | 'out-of-sync' | 'error';
@@ -235,10 +235,9 @@ const applyCloudMerge = (cloud: StoredFinanceSnapshot | null, transactions: Tran
             budgets: mergeById(cloud?.budgets, current.budgets),
             goals: mergeById(cloud?.goals, current.goals),
             cards: mergeById(cloud?.cards, current.cards),
-            smsDetections: reconcileDetections(
-              mergeById(cloud?.smsDetections, current.smsDetections),
-              mergedTransactions,
-            ).slice(0, 80),
+            smsDetections: capDetections(
+              reconcileDetections(mergeById(cloud?.smsDetections, current.smsDetections), mergedTransactions),
+            ),
             settings: {
               ...current.settings,
               ...(cloud?.settings ?? {}),

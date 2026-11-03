@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import {
+  capDetections,
   extractCardLast4,
   parseSms,
   isLikelyDuplicate,
@@ -124,7 +125,7 @@ const mergeDetections = (
   const unique = merged.filter(
     (item, index) => merged.findIndex((other) => other.id === item.id) === index,
   );
-  return reconcileDetections(unique, transactions).slice(0, 80);
+  return capDetections(reconcileDetections(unique, transactions));
 };
 
 export type CategoryKind = 'expense' | 'income';

@@ -288,6 +288,32 @@ export const isLikelyDuplicate = (
   );
 };
 
+const MAX_STORED_DETECTIONS = 80;
+
+const detectionTime = (item: SmsDetection): number => {
+  const time = item.occurredAt ? new Date(item.occurredAt).getTime() : Number.NaN;
+  return Number.isFinite(time) ? time : 0;
+};
+
+/**
+ * Ordena de más reciente a más antiguo y recorta el historial.
+ * Los pendientes visibles nunca se recortan; el tope solo aplica a lo ya resuelto o duplicado.
+ */
+export const capDetections = (
+  detections: SmsDetection[],
+  max = MAX_STORED_DETECTIONS,
+): SmsDetection[] => {
+  const sorted = [...detections].sort((a, b) => detectionTime(b) - detectionTime(a));
+  const isOpen = (item: SmsDetection) => item.status === 'pending' && !item.duplicate;
+  let room = Math.max(0, max - sorted.filter(isOpen).length);
+  return sorted.filter((item) => {
+    if (isOpen(item)) return true;
+    if (room <= 0) return false;
+    room -= 1;
+    return true;
+  });
+};
+
 /**
  * Deja visible un solo pendiente por monto+minuto.
  * Si ese gasto ya está guardado, o ya se descartó, el resto queda marcado como duplicado y no se pide de nuevo.
