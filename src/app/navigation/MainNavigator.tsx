@@ -11,7 +11,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DashboardScreen } from "../../features/dashboard/DashboardScreen";
 import { TransactionsScreen } from "../../features/transactions/TransactionsScreen";
-import { InsightsScreen } from "../../features/insights/InsightsScreen";
+import { CategoryPeriodScreen, InsightsScreen } from "../../features/insights";
 import { BudgetsScreen } from "../../features/budgets/BudgetsScreen";
 import { SmsInboxScreen } from "../../features/sms/SmsInboxScreen";
 import { SettingsScreen } from "../../features/settings/SettingsScreen";
@@ -45,6 +45,13 @@ type RootStackParamList = {
   Budgets: undefined;
   CurrencySelect: undefined;
   TransactionDetail: { transactionId: string };
+  CategoryPeriod: {
+    category: string;
+    kind: "expense" | "income";
+    periodMode: "month" | "year";
+    periodId: string;
+    color: string;
+  };
 };
 
 export type TabParamList = {
@@ -306,6 +313,14 @@ export function MainNavigator() {
           name="TransactionDetail"
           component={TransactionDetailScreen}
           options={{ title: "Detalles", headerTitleAlign: "center" }}
+        />
+        <Stack.Screen
+          name="CategoryPeriod"
+          component={CategoryPeriodScreen}
+          options={({ route }) => ({
+            title: route.params.category,
+            headerTitleAlign: "center",
+          })}
         />
       </Stack.Navigator>
     </NavigationContainer>

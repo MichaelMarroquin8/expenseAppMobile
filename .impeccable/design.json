@@ -1,0 +1,311 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-04T23:52:00.000Z",
+  "title": "Design System: ExpenseApp",
+  "extensions": {
+    "colorMeta": {
+      "statement-blue": {
+        "role": "primary",
+        "displayName": "Tinta azul",
+        "canonical": "oklch(54.6% 0.215 262.9)",
+        "tonalRamp": ["#020922", "#001962", "#0e3895", "#2f5dbd", "#5182e5", "#74a8ff", "#95ccff", "#dbefff"]
+      },
+      "statement-blue-wash": {
+        "role": "primary",
+        "displayName": "Lavado de tinta",
+        "canonical": "#2563EB20",
+        "tonalRamp": ["#020922", "#001962", "#0e3895", "#2f5dbd", "#5182e5", "#74a8ff", "#95ccff", "#dbefff"]
+      },
+      "statement-paper": {
+        "role": "neutral",
+        "displayName": "Fondo de extracto",
+        "canonical": "oklch(97.6% 0.006 264.5)",
+        "tonalRamp": ["#0b0b0b", "#242424", "#424242", "#636363", "#868686", "#ababab", "#cecece", "#eeeeee"]
+      },
+      "statement-ink": {
+        "role": "neutral",
+        "displayName": "Texto de extracto",
+        "canonical": "oklch(20.8% 0.040 265.8)",
+        "tonalRamp": ["#080b11", "#1c2434", "#384258", "#58637b", "#7b869f", "#9fabc5", "#c1cee9", "#eaeff8"]
+      },
+      "statement-muted": {
+        "role": "neutral",
+        "displayName": "Texto secundario",
+        "canonical": "oklch(55.4% 0.041 257.4)",
+        "tonalRamp": ["#080b11", "#1a2534", "#354358", "#55647b", "#77879f", "#9bacc5", "#bdcfe9", "#e9eff8"]
+      },
+      "statement-line": {
+        "role": "neutral",
+        "displayName": "Línea de extracto",
+        "canonical": "oklch(92.9% 0.013 255.5)",
+        "tonalRamp": ["#0a0b0d", "#212429", "#3e4349", "#5f646b", "#81878e", "#a6abb3", "#c8ced6", "#eceff1"]
+      },
+      "surface-white": {
+        "role": "neutral",
+        "displayName": "Superficie",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": ["#0b0b0b", "#242424", "#424242", "#636363", "#868686", "#ababab", "#cecece", "#eeeeee"]
+      },
+      "card-wash": {
+        "role": "neutral",
+        "displayName": "Lavado de tarjeta",
+        "canonical": "oklch(98.4% 0.003 247.9)",
+        "tonalRamp": ["#0b0b0b", "#242424", "#424242", "#636363", "#868686", "#ababab", "#cecece", "#eeeeee"]
+      },
+      "confirmed-green": {
+        "role": "status",
+        "displayName": "Verde confirmado",
+        "canonical": "oklch(69.6% 0.149 162.5)",
+        "tonalRamp": ["#001105", "#00340f", "#005828", "#007c49", "#00a16b", "#2fc78e", "#5fecb1", "#d0fae4"]
+      },
+      "pending-amber": {
+        "role": "status",
+        "displayName": "Ámbar pendiente",
+        "canonical": "oklch(76.9% 0.165 70.1)",
+        "tonalRamp": ["#190500", "#480b00", "#742800", "#9a4c00", "#c17000", "#ea9601", "#ffb945", "#ffe9c7"]
+      },
+      "rejected-red": {
+        "role": "status",
+        "displayName": "Rojo rechazado",
+        "canonical": "oklch(63.7% 0.208 25.3)",
+        "tonalRamp": ["#1d0102", "#530000", "#83000c", "#ac3130", "#d55852", "#ff7e76", "#ffa197", "#ffe1dc"]
+      },
+      "night-statement": {
+        "role": "neutral",
+        "displayName": "Noche de extracto",
+        "canonical": "oklch(12.9% 0.041 264.7)",
+        "tonalRamp": ["#080b11", "#1c2434", "#384258", "#58637b", "#7a869f", "#9eabc5", "#c1cee9", "#eaeff8"]
+      },
+      "night-surface": {
+        "role": "neutral",
+        "displayName": "Superficie de noche",
+        "canonical": "oklch(18.3% 0.031 263.4)",
+        "tonalRamp": ["#090b10", "#1e2431", "#3a4253", "#5a6375", "#7d8699", "#a1abbf", "#c3cee3", "#ebeff6"]
+      },
+      "night-card": {
+        "role": "neutral",
+        "displayName": "Tarjeta de noche",
+        "canonical": "oklch(21.0% 0.032 264.7)",
+        "tonalRamp": ["#090b10", "#1e2431", "#3a4254", "#5a6376", "#7d869a", "#a1abc0", "#c4cee3", "#ebeff6"]
+      },
+      "night-text": {
+        "role": "neutral",
+        "displayName": "Texto de noche",
+        "canonical": "oklch(92.9% 0.013 255.5)",
+        "tonalRamp": ["#0a0b0d", "#212429", "#3e4349", "#5f646b", "#81878e", "#a6abb3", "#c8ced6", "#eceff1"]
+      },
+      "night-muted": {
+        "role": "neutral",
+        "displayName": "Texto secundario de noche",
+        "canonical": "oklch(71.1% 0.035 256.8)",
+        "tonalRamp": ["#080b10", "#1b2532", "#364355", "#576478", "#79879c", "#9dacc1", "#bfcfe5", "#e9eff7"]
+      },
+      "night-line": {
+        "role": "neutral",
+        "displayName": "Línea de noche",
+        "canonical": "oklch(27.9% 0.037 260.0)",
+        "tonalRamp": ["#080b11", "#1b2433", "#374356", "#576479", "#79879d", "#9eacc3", "#c0cfe7", "#e9eff7"]
+      },
+      "signal-clear": {
+        "role": "primary",
+        "displayName": "Señal clara",
+        "canonical": "oklch(71.4% 0.143 254.6)",
+        "tonalRamp": ["#000b1f", "#00205b", "#003f8c", "#1c63b2", "#4387da", "#68adff", "#8bd1ff", "#d8f1ff"]
+      },
+      "confirmed-green-night": {
+        "role": "status",
+        "displayName": "Verde confirmado",
+        "canonical": "oklch(77.3% 0.153 163.2)",
+        "tonalRamp": ["#001105", "#003410", "#005929", "#007c49", "#00a26b", "#20c88f", "#57edb1", "#cffbe4"]
+      },
+      "pending-amber-night": {
+        "role": "status",
+        "displayName": "Ámbar pendiente",
+        "canonical": "oklch(83.7% 0.164 84.4)",
+        "tonalRamp": ["#160800", "#401700", "#683400", "#8d5700", "#b27b00", "#d9a000", "#fec436", "#ffecc4"]
+      },
+      "rejected-red-night": {
+        "role": "status",
+        "displayName": "Rojo rechazado",
+        "canonical": "oklch(71.1% 0.166 22.2)",
+        "tonalRamp": ["#1d0102", "#530001", "#830015", "#ac3037", "#d55758", "#ff7d7c", "#ffa09d", "#ffe1de"]
+      },
+      "scrim": {
+        "role": "neutral",
+        "displayName": "Velo",
+        "canonical": "rgba(2, 6, 23, 0.72)",
+        "tonalRamp": ["#080b11", "#1c2434", "#384258", "#58637b", "#7a869f", "#9eabc5", "#c1cee9", "#eaeff8"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "La cifra de saldo en el escritorio. En pantallas más justas la misma función baja a 30px o 28px, siempre en peso 800."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "El título de sección al entrar a una pantalla, y el título del diálogo."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "El título dentro de una tarjeta o de un bloque de formulario."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Mensajes y notas. La nota secundaria recurrente es 13px con line-height 18px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "La etiqueta sobre un campo, el metadato y el texto de un chip."
+      }
+    },
+    "shadows": [
+      {
+        "name": "action",
+        "value": "0 4px 10px rgba(0, 0, 0, 0.22)",
+        "purpose": "El botón de agregar, y cualquier superficie que de verdad esté levantada."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal llena, Tinta azul y texto blanco.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Guardar</button>",
+      "css": ".ds-btn-primary { background: #2563EB; color: #FFFFFF; border: none; border-radius: 12px; padding: 12px 16px; font-family: Roboto, sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity 0.15s ease, filter 0.15s ease; } .ds-btn-primary:hover { filter: brightness(0.95); } .ds-btn-primary:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; } .ds-btn-primary:active { opacity: 0.7; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Cancelación del diálogo: filete y texto de extracto, sin relleno.",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">Cancelar</button>",
+      "css": ".ds-btn-outline { background: transparent; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 16px; font-family: Roboto, sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; } .ds-btn-outline:hover { border-color: #2563EB; color: #2563EB; } .ds-btn-outline:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; } .ds-btn-outline:active { opacity: 0.7; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo con filete, sin relleno, etiqueta corta encima.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Nombre de la cuenta</span><input class=\"ds-input\" placeholder=\"Ej. Bancolombia, Efectivo\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: Roboto, sans-serif; } .ds-field-label { color: #64748B; font-size: 12px; font-weight: 600; } .ds-input { color: #0F172A; background: transparent; border: 1px solid #E2E8F0; border-radius: 12px; padding: 10px 12px; font-family: inherit; font-size: 14px; } .ds-input::placeholder { color: #64748B; } .ds-input:hover { border-color: #94A3B8; } .ds-input:focus-visible { outline: none; border-color: #2563EB; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Píldora de filtro. Elegida, filete y texto en Tinta azul sobre el lavado.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" type=\"button\">Claro</button><button class=\"ds-chip ds-chip-selected\" type=\"button\">Sistema</button></div>",
+      "css": ".ds-chips { display: flex; gap: 8px; font-family: Roboto, sans-serif; } .ds-chip { background: transparent; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 999px; padding: 8px 12px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; } .ds-chip:hover { border-color: #2563EB; } .ds-chip:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; } .ds-chip-selected { background: #2563EB20; color: #2563EB; border-color: #2563EB; }"
+    },
+    {
+      "name": "Statement Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Tarjeta clara: radio 20, filete y lavado diagonal. Sin sombra.",
+      "html": "<article class=\"ds-card\"><p class=\"ds-card-label\">Saldo actual</p><p class=\"ds-card-balance\">$1.250.000</p><p class=\"ds-card-meta\">Frente al mes pasado</p></article>",
+      "css": ".ds-card { background: linear-gradient(135deg, #FFFFFF, #F8FAFC); color: #0F172A; border: 1px solid #E2E8F0; border-radius: 20px; padding: 16px; font-family: Roboto, sans-serif; max-width: 320px; } .ds-card-label { margin: 0; color: #64748B; font-size: 14px; font-weight: 400; } .ds-card-balance { margin: 6px 0 0; font-size: 34px; font-weight: 800; line-height: 1.1; } .ds-card-meta { margin: 8px 0 0; color: #10B981; font-size: 13px; font-weight: 600; }"
+    },
+    {
+      "name": "Night Card",
+      "kind": "card",
+      "refersTo": "card-night",
+      "description": "La misma tarjeta de noche, plana, sobre Noche de extracto.",
+      "html": "<article class=\"ds-night-card\"><p class=\"ds-night-label\">Saldo actual</p><p class=\"ds-night-balance\">$1.250.000</p><p class=\"ds-night-meta\">Frente al mes pasado</p></article>",
+      "css": ".ds-night-card { background: #111827; color: #E2E8F0; border: 1px solid #1E293B; border-radius: 20px; padding: 16px; font-family: Roboto, sans-serif; max-width: 320px; } .ds-night-label { margin: 0; color: #94A3B8; font-size: 14px; } .ds-night-balance { margin: 6px 0 0; font-size: 34px; font-weight: 800; line-height: 1.1; } .ds-night-meta { margin: 8px 0 0; color: #34D399; font-size: 13px; font-weight: 600; }"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Cinco destinos. La pestaña activa se sienta en una cápsula de línea.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-item-active\" href=\"#inicio\"><span class=\"ds-nav-slot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/></svg></span><span>Inicio</span></a><a class=\"ds-nav-item\" href=\"#movs\"><span class=\"ds-nav-slot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M7 7h11M16 4l3 3-3 3M17 17H6M8 14l-3 3 3 3\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></span><span>Movs</span></a><a class=\"ds-nav-item\" href=\"#graficos\"><span class=\"ds-nav-slot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M12 4a8 8 0 1 0 8 8h-8V4Z\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/></svg></span><span>Gráficos</span></a><a class=\"ds-nav-item\" href=\"#inbox\"><span class=\"ds-nav-slot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M6 7h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H11l-4 3v-3H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/></svg></span><span>Inbox</span></a><a class=\"ds-nav-item\" href=\"#mas\"><span class=\"ds-nav-slot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"3\" stroke=\"currentColor\" stroke-width=\"1.8\"/><path d=\"M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"/></svg></span><span>Más</span></a></nav>",
+      "css": ".ds-nav { display: flex; align-items: flex-end; justify-content: space-around; height: 58px; padding: 6px 4px 8px; background: #FFFFFF; border-top: 1px solid #E2E8F0; border-top-left-radius: 18px; border-top-right-radius: 18px; font-family: Roboto, sans-serif; } .ds-nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #64748B; font-size: 11px; font-weight: 600; text-decoration: none; } .ds-nav-slot { width: 56px; height: 32px; border-radius: 16px; display: flex; align-items: center; justify-content: center; } .ds-nav-item:hover { color: #2563EB; } .ds-nav-item:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; border-radius: 12px; } .ds-nav-item-active { color: #2563EB; } .ds-nav-item-active .ds-nav-slot { background: #E2E8F0; }"
+    },
+    {
+      "name": "Add Button",
+      "kind": "button",
+      "refersTo": "fab",
+      "description": "La única superficie levantada: círculo de 62 con anillo y sombra de acción.",
+      "html": "<button class=\"ds-fab\" type=\"button\" aria-label=\"Agregar\"><svg width=\"30\" height=\"30\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\" stroke=\"#FFFFFF\" stroke-width=\"2.2\" stroke-linecap=\"round\"/></svg></button>",
+      "css": ".ds-fab { width: 62px; height: 62px; border-radius: 31px; border: 4px solid #FFFFFF; background: #2563EB; color: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22); transition: opacity 0.15s ease, filter 0.15s ease; } .ds-fab:hover { filter: brightness(0.95); } .ds-fab:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; } .ds-fab:active { opacity: 0.7; }"
+    },
+    {
+      "name": "Confirm Dialog",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Confirmación sobre el velo. Cancelar en outline, confirmar lleno.",
+      "html": "<div class=\"ds-dialog-stage\"><section class=\"ds-dialog\" role=\"dialog\" aria-labelledby=\"ds-dialog-title\"><div class=\"ds-dialog-icon\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><path d=\"M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12\" stroke=\"#EF4444\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></div><h2 class=\"ds-dialog-title\" id=\"ds-dialog-title\">Eliminar movimiento</h2><p class=\"ds-dialog-message\">Esta acción quita el movimiento del libro.</p><div class=\"ds-dialog-actions\"><button class=\"ds-btn-outline\" type=\"button\">Cancelar</button><button class=\"ds-btn-danger\" type=\"button\">Eliminar</button></div></section></div>",
+      "css": ".ds-dialog-stage { background: rgba(2, 6, 23, 0.72); padding: 24px; font-family: Roboto, sans-serif; } .ds-dialog { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 20px; padding: 20px; max-width: 360px; } .ds-dialog-icon { width: 44px; height: 44px; border-radius: 22px; background: #EF444422; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; } .ds-dialog-title { margin: 0; color: #0F172A; font-size: 18px; font-weight: 800; } .ds-dialog-message { margin: 6px 0 0; color: #64748B; font-size: 14px; line-height: 20px; } .ds-dialog-actions { display: flex; gap: 10px; margin-top: 18px; } .ds-btn-outline { flex: 1; background: transparent; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 16px; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; } .ds-btn-danger { flex: 1; background: #EF4444; color: #FFFFFF; border: none; border-radius: 12px; padding: 12px 16px; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; } .ds-btn-outline:hover { border-color: #EF4444; color: #EF4444; } .ds-btn-danger:hover { filter: brightness(0.95); } .ds-btn-outline:focus-visible, .ds-btn-danger:focus-visible { outline: 2px solid #EF4444; outline-offset: 2px; } .ds-btn-outline:active, .ds-btn-danger:active { opacity: 0.7; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "El escritorio de saldo",
+    "overview": "El escritorio de saldo es una mesa de trabajo para mirar el mes: saldo, cuentas, presupuestos y el movimiento, en una sola columna de teléfono. La voz es de herramienta sobria. El radio amplio de las tarjetas y el lavado de blanco a gris claro son el gesto táctil. No hay oro, no hay un oscuro de lujo y no hay adorno «premium».\n\nLa densidad es de extracto, no de campaña. El número grande es el saldo. Los títulos de sección quedan un escalón abajo. Tinta azul marca la acción, la pestaña activa y el filtro elegido. Verde confirmado, Ámbar pendiente y Rojo rechazado nombran estados del dinero. El resto de la pantalla es papel, tinta y línea.\n\nDe noche es el mismo escritorio: Noche de extracto, Tarjeta de noche, Texto de noche y Señal clara. Cambia el valor, no la geometría ni el nombre de los estados. La barra y el botón de agregar flotan sobre el contenido. Las tarjetas en reposo no flotan.",
+    "keyCharacteristics": [
+      "Una columna de teléfono, con padding de página 16.",
+      "Tarjeta de radio 20, filete de 1 px y, en claro, lavado de #FFFFFF a #F8FAFC.",
+      "Controles de radio 12. La píldora queda en chips y barras de progreso.",
+      "Sombra estructural solo en lo levantado. Hoy la lleva el botón de agregar.",
+      "La noche repite la geometría con tokens propios."
+    ],
+    "rules": [
+      {
+        "name": "The One Ink Rule",
+        "body": "Tinta azul, y de noche Señal clara, es el único acento de marca. Marca la acción principal, la pestaña activa y el chip elegido. No pinta fondos de pantalla ni títulos.",
+        "section": "colors"
+      },
+      {
+        "name": "The Statement Status Rule",
+        "body": "Verde confirmado, Ámbar pendiente y Rojo rechazado nombran un estado del dinero. No decoran cabeceras ni espacios vacíos.",
+        "section": "colors"
+      },
+      {
+        "name": "The Balance Rule",
+        "body": "El tipo más grande es una cifra de dinero (34, peso 800). El título de sección se queda en 18, peso 700, y no compite con el saldo.",
+        "section": "typography"
+      },
+      {
+        "name": "The Phone Column Rule",
+        "body": "La pantalla es una columna con padding 16. El contenido deja aire abajo para la barra y el botón de agregar. No se abre un segundo rail en el teléfono.",
+        "section": "layout"
+      },
+      {
+        "name": "The Border At Rest Rule",
+        "body": "Una superficie en reposo se separa con una línea de 1 px. El lavado de la tarjeta clara es tono, no elevación.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Structural Shadow Rule",
+        "body": "La sombra (desplazamiento 4, radio 10, opacidad 0.22, elevation 8) es estructural y puede repetirse en otras superficies levantadas. No se aplica a una tarjeta en reposo. Hoy la lleva el botón de agregar.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Two Radii Rule",
+        "body": "Controles (botón, campo, botón de diálogo) usan radio 12. Contenedores (tarjeta, diálogo) usan radio 20. La píldora (999) es para chips y barras de progreso.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Soft Card Rule",
+        "body": "El gesto táctil es la tarjeta: radio 20 y, en claro, el lavado de blanco a #F8FAFC. El botón no lleva ese lavado ni un rebote.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** usar Tinta azul solo en la acción principal, la pestaña activa y el chip elegido. De noche, ese oficio es Señal clara.",
+      "**Do** dejar las tarjetas en reposo con radio 20, padding 16 y filete de 1 px. En claro, el lavado va de #FFFFFF a #F8FAFC. De noche, la tarjeta es plana.",
+      "**Do** reservar el tipo de 34 / 800 para una cifra de dinero y el de 18 / 700 para el título de sección.",
+      "**Do** tratar la noche como el mismo escritorio, con Noche de extracto, Tarjeta de noche, Texto de noche y Señal clara.",
+      "**Do** repetir la Sombra de acción solo en una superficie que de verdad esté levantada."
+    ],
+    "donts": [
+      "**Don't** añadir oro, un oscuro de lujo ni adorno «premium».",
+      "**Don't** poner degradado en botones. El lavado pertenece a la tarjeta clara.",
+      "**Don't** sombrear una tarjeta en reposo.",
+      "**Don't** cargar una serifa de marca ni un segundo acento.",
+      "**Don't** usar la píldora en botones o tarjetas."
+    ]
+  }
+}

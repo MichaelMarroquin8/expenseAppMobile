@@ -1,16 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatMoney, monthKey, monthKeyFromIso } from '../../core/utils/format';
-import { isBalanceAdjustment } from '../../domain/accounts';
+import { formatMoney, monthKey } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
-
-type EntryKind = 'expense' | 'income';
-type PeriodMode = 'month' | 'year';
+import type { CategoryPeriodParams } from './CategoryPeriodScreen';
+import { EntryKind, PeriodMode, transactionMatchesPeriod } from './period';
 
 interface CategorySlice {
   category: string;
@@ -18,6 +17,7 @@ interface CategorySlice {
   percent: number;
   color: string;
   icon: string;
+  synthetic?: boolean;
 }
 
 const CHART_COLORS = [
@@ -123,6 +123,7 @@ const DonutChart = ({
 export function InsightsScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const transactions = useFinanceStore((state) => state.transactions);
   const currency = useFinanceStore((state) => state.settings.currency);
   const categoryIcons = useFinanceStore((state) => state.categoryIcons);
@@ -164,15 +165,22 @@ export function InsightsScreen() {
       ? periodOptions.find((item) => item.offset === selectedMonthOffset)?.id ?? monthKey()
       : periodOptions.find((item) => item.offset === selectedYearOffset)?.id ?? String(new Date().getFullYear());
 
-  const periodTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (isBalanceAdjustment(tx) || tx.type !== kind) return false;
-      if (periodMode === 'month') {
-        return monthKeyFromIso(tx.occurredAt) === activePeriodId;
-      }
-      return new Date(tx.occurredAt).getFullYear().toString() === activePeriodId;
-    });
-  }, [transactions, kind, periodMode, activePeriodId]);
+  const periodTransactions = useMemo(
+    () => transactions.filter((tx) => transactionMatchesPeriod(tx, kind, periodMode, activePeriodId)),
+    [transactions, kind, periodMode, activePeriodId],
+  );
+
+  const openCategory = (item: CategorySlice) => {
+    if (item.synthetic) return;
+    const params: CategoryPeriodParams = {
+      category: item.category,
+      kind,
+      periodMode,
+      periodId: activePeriodId,
+      color: item.color,
+    };
+    navigation.navigate('CategoryPeriod', params);
+  };
 
   const categorySlices = useMemo<CategorySlice[]>(() => {
     const totals = periodTransactions.reduce<Record<string, number>>((acc, tx) => {
@@ -204,6 +212,7 @@ export function InsightsScreen() {
             percent: otherPercent,
             color: CHART_COLORS[5 % CHART_COLORS.length],
             icon: 'apps-outline',
+            synthetic: true,
           },
         ]
       : topLegend;
@@ -323,7 +332,15 @@ export function InsightsScreen() {
                 </Text>
               ) : (
                 legendRows.map((item) => (
-                  <View key={item.category} style={styles.legendRow}>
+                  <Pressable
+                    key={item.synthetic ? 'legend-other' : item.category}
+                    disabled={item.synthetic}
+                    accessibilityRole={item.synthetic ? undefined : 'button'}
+                    accessibilityLabel={item.synthetic ? item.category : `Ver ${item.category}`}
+                    android_ripple={null}
+                    onPress={() => openCategory(item)}
+                    style={styles.legendRow}
+                  >
                     <View style={[styles.legendDot, { backgroundColor: item.color }]} />
                     <Text style={[styles.legendName, { color: theme.text }]} numberOfLines={1}>
                       {item.category}
@@ -331,7 +348,7 @@ export function InsightsScreen() {
                     <Text style={[styles.legendPercent, { color: theme.textMuted }]}>
                       {item.percent.toFixed(2)}%
                     </Text>
-                  </View>
+                  </Pressable>
                 ))
               )}
             </View>
@@ -341,7 +358,7 @@ export function InsightsScreen() {
         <PremiumCard>
           <SectionTitle
             title={kind === 'expense' ? 'Gasto por categoría' : 'Ingreso por categoría'}
-            subtitle="Acumulado del periodo seleccionado"
+            subtitle="Toca una categoría para ver sus movimientos"
           />
           {categorySlices.length === 0 ? (
             <Text style={[styles.emptyText, { color: theme.textMuted }]}>
@@ -349,7 +366,14 @@ export function InsightsScreen() {
             </Text>
           ) : (
             categorySlices.map((item) => (
-              <View key={item.category} style={styles.categoryRow}>
+              <Pressable
+                key={item.category}
+                accessibilityRole="button"
+                accessibilityLabel={`Ver ${item.category}`}
+                android_ripple={null}
+                onPress={() => openCategory(item)}
+                style={styles.categoryRow}
+              >
                 <View style={[styles.iconWrap, { backgroundColor: `${item.color}22` }]}>
                   <Ionicons
                     name={(item.icon as keyof typeof Ionicons.glyphMap) || 'pricetag-outline'}
@@ -379,7 +403,8 @@ export function InsightsScreen() {
                     {item.percent.toFixed(2)}% del total
                   </Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+              </Pressable>
             ))
           )}
         </PremiumCard>
@@ -438,6 +463,7 @@ const styles = StyleSheet.create({
   legendPercent: { fontSize: 12, fontWeight: '600' },
   categoryRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     marginBottom: 14,
   },
