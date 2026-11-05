@@ -6,11 +6,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ConfirmModal, PremiumCard, Screen } from "../../components/ui";
+import { ConfirmModal, Field, PremiumCard, Screen } from "../../components/ui";
 import { KeyboardSafeScroll } from "../../components/KeyboardSafeScroll";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from "../../core/utils/format";
@@ -358,7 +357,7 @@ export function TransactionsScreen() {
             </View>
           </View>
 
-          <TextInput
+          <Field
             placeholder="Buscar por comercio o categoría"
             placeholderTextColor={theme.textMuted}
             value={search}
@@ -499,7 +498,7 @@ const styles = StyleSheet.create({
   accountsCard: {
     padding: 0,
     marginBottom: 0,
-    borderRadius: 14,
+    borderRadius: 20,
     alignSelf: "center",
   },
   accountsLink: {
@@ -564,13 +563,13 @@ const styles = StyleSheet.create({
   segmentChip: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 9,
     alignItems: "center",
   },
   segmentChipFull: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 9,
     alignItems: "center",
   },

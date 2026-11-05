@@ -36,3 +36,18 @@ export const darkTheme: Theme = {
   danger: '#F87171',
   border: '#1E293B',
 };
+
+/**
+ * Pasos de tinta y neutros para distinguir series, cuentas y tarjetas.
+ * No incluye verde, ámbar ni rojo: esos colores nombran el estado del dinero.
+ */
+export const inkSeries = [
+  '#1E3A8A',
+  '#1D4ED8',
+  '#2563EB',
+  '#3B82F6',
+  '#0369A1',
+  '#0284C7',
+  '#334155',
+  '#64748B',
+] as const;

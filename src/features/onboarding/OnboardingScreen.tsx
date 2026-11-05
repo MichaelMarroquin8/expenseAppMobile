@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 30,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 14,
   },

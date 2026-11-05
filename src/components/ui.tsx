@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import React, { forwardRef, useState } from 'react';
+import { Modal, Pressable, StyleProp, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../core/theme/ThemeProvider';
 
@@ -19,7 +19,7 @@ export function PremiumCard({
   style,
 }: {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const { activeMode, theme } = useAppTheme();
   if (activeMode === 'dark') {
@@ -41,6 +41,30 @@ export function PremiumCard({
     </LinearGradient>
   );
 }
+
+export const Field = forwardRef<TextInput, TextInputProps>(function Field(
+  { style, onFocus, onBlur, placeholderTextColor, ...rest },
+  ref,
+) {
+  const { theme } = useAppTheme();
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      ref={ref}
+      placeholderTextColor={placeholderTextColor ?? theme.textMuted}
+      {...rest}
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+      style={[style, focused ? { borderColor: theme.primary } : null]}
+    />
+  );
+});
 
 export function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   const { theme } = useAppTheme();
@@ -77,6 +101,8 @@ export function ConfirmModal({
 }) {
   const { theme } = useAppTheme();
   const accent = tone === 'danger' ? theme.danger : theme.primary;
+  const [cancelFocused, setCancelFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
 
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onCancel}>
@@ -95,7 +121,13 @@ export function ConfirmModal({
               accessibilityRole="button"
               accessibilityLabel={cancelLabel}
               onPress={onCancel}
-              style={[styles.confirmButton, styles.confirmCancel, { borderColor: theme.border }]}
+              onFocus={() => setCancelFocused(true)}
+              onBlur={() => setCancelFocused(false)}
+              style={[
+                styles.confirmButton,
+                styles.confirmCancel,
+                { borderColor: cancelFocused ? theme.primary : theme.border },
+              ]}
             >
               <Text style={[styles.confirmButtonText, { color: theme.text }]}>{cancelLabel}</Text>
             </Pressable>
@@ -103,7 +135,12 @@ export function ConfirmModal({
               accessibilityRole="button"
               accessibilityLabel={confirmLabel}
               onPress={onConfirm}
-              style={[styles.confirmButton, { backgroundColor: accent }]}
+              onFocus={() => setConfirmFocused(true)}
+              onBlur={() => setConfirmFocused(false)}
+              style={[
+                styles.confirmButton,
+                { backgroundColor: accent, borderWidth: 2, borderColor: confirmFocused ? theme.surface : accent },
+              ]}
             >
               <Text style={[styles.confirmButtonText, styles.confirmConfirmText]}>{confirmLabel}</Text>
             </Pressable>

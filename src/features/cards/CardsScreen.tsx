@@ -5,7 +5,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { Field, PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { inkSeries } from '../../core/theme/tokens';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, parseAmountInput } from '../../core/utils/format';
 import { defaultIconForKind, isBankAccount } from '../../domain/accounts';
@@ -26,7 +27,7 @@ type CardFieldErrors = {
   days?: string;
 };
 
-const palette = ['#2563EB', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B'];
+const palette: readonly string[] = inkSeries;
 
 const parseDay = (raw: string): number | null => {
   if (!/^\d{1,2}$/.test(raw.trim())) return null;
@@ -192,7 +193,7 @@ export function CardsScreen() {
           </View>
 
           <View style={styles.inlineFields}>
-            <TextInput
+            <Field
               value={alias}
               onChangeText={(value) => {
                 setAlias(value);
@@ -210,7 +211,7 @@ export function CardsScreen() {
                 { color: theme.text, borderColor: errors.alias ? theme.danger : theme.border },
               ]}
             />
-            <TextInput
+            <Field
               ref={last4Ref}
               value={last4}
               onChangeText={(value) => {
@@ -241,7 +242,7 @@ export function CardsScreen() {
                 Cupo y días
               </Text>
               <View style={styles.inlineFields}>
-                <TextInput
+                <Field
                   ref={limitRef}
                   value={formatAmountInput(limitRaw, currency)}
                   onChangeText={(value) => {
@@ -257,7 +258,7 @@ export function CardsScreen() {
                     { color: theme.text, borderColor: errors.limit ? theme.danger : theme.border },
                   ]}
                 />
-                <TextInput
+                <Field
                   value={statementRaw}
                   onChangeText={(value) => {
                     const digits = value.replace(/\D/g, '').slice(0, 2);
@@ -275,7 +276,7 @@ export function CardsScreen() {
                     { color: theme.text, borderColor: errors.days ? theme.danger : theme.border },
                   ]}
                 />
-                <TextInput
+                <Field
                   ref={dueRef}
                   value={dueRaw}
                   onChangeText={(value) => {
@@ -407,7 +408,7 @@ const styles = StyleSheet.create({
   last4Input: { width: 108, marginBottom: 8, textAlign: 'center' },
   limitInput: { flex: 1.4, marginBottom: 8 },
   segmentRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  segment: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  segment: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   segmentText: { fontWeight: '600' },
   pickerTitle: { fontSize: 12, fontWeight: '700', marginBottom: 4, marginTop: 4 },
   dayRow: { gap: 8, marginBottom: 8 },

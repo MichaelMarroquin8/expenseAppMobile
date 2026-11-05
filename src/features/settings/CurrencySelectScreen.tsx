@@ -5,12 +5,11 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Screen } from '../../components/ui';
+import { Field, Screen } from '../../components/ui';
 import {
   CURRENCIES,
   CurrencyOption,
@@ -50,7 +49,7 @@ export function CurrencySelectScreen() {
         {searchOpen ? (
           <View style={styles.searchBar}>
             <Ionicons name="search" size={20} color={theme.textMuted} />
-            <TextInput
+            <Field
               autoFocus
               value={query}
               onChangeText={setQuery}

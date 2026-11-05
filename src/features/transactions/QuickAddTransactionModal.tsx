@@ -20,7 +20,7 @@ import {
   getExchangeRates,
   getUnitsOfBasePerOne,
 } from '../../backend/exchangeRates';
-import { ConfirmModal } from '../../components/ui';
+import { ConfirmModal, Field } from '../../components/ui';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
 import { findCurrency } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
@@ -837,7 +837,7 @@ export function QuickAddTransactionModal({
               </View>
 
               <View style={styles.addCategoryRow}>
-                <TextInput
+                <Field
                   value={newCategory}
                   onChangeText={setNewCategory}
                   placeholder="Nueva categoría"
@@ -954,7 +954,7 @@ export function QuickAddTransactionModal({
                       </Text>
                     </Pressable>
                     <Pressable style={styles.amountInputHit} onPress={() => Keyboard.dismiss()}>
-                      <TextInput
+                      <Field
                         ref={amountInputRef}
                         value={formatAmountInput(amountRaw, entryCurrency)}
                         onChangeText={(val) => setAmountRaw(parseAmountInput(val, entryCurrency))}
@@ -981,7 +981,7 @@ export function QuickAddTransactionModal({
                   ) : null}
                 </View>
               </View>
-              <TextInput
+              <Field
                 value={merchant}
                 onChangeText={setMerchant}
                 placeholder={type === 'transfer' ? 'Nota' : 'Comercio o descripción'}
@@ -1308,7 +1308,7 @@ const styles = StyleSheet.create({
   fxButton: {
     width: 34,
     height: 34,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1333,7 +1333,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 148,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
@@ -1343,7 +1343,7 @@ const styles = StyleSheet.create({
   transferIcon: {
     width: 52,
     height: 52,
-    borderRadius: 16,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1370,7 +1370,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 10,
     marginBottom: 8,
@@ -1378,7 +1378,7 @@ const styles = StyleSheet.create({
   transferOptionIcon: {
     width: 36,
     height: 36,
-    borderRadius: 12,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1393,7 +1393,7 @@ const styles = StyleSheet.create({
     maxWidth: '52%',
     flexShrink: 1,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
@@ -1404,7 +1404,7 @@ const styles = StyleSheet.create({
   categoryBoxIcon: {
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1420,7 +1420,7 @@ const styles = StyleSheet.create({
   amountCard: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 8,
     justifyContent: 'center',
@@ -1436,7 +1436,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   currencyBadge: {
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1478,7 +1478,7 @@ const styles = StyleSheet.create({
   },
   blockTitle: { fontWeight: '700', marginBottom: 6, marginTop: 2 },
   segmentRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  segment: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  segment: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   segmentLabel: { fontWeight: '700' },
   input: {
     borderWidth: 1,
@@ -1536,7 +1536,7 @@ const styles = StyleSheet.create({
   },
   categoryTile: {
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
@@ -1558,7 +1558,7 @@ const styles = StyleSheet.create({
   },
   addCategoryRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' },
   addCategoryInput: { flex: 1, marginBottom: 0 },
-  addCategoryButton: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11 },
+  addCategoryButton: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
   dateCompactRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1593,13 +1593,13 @@ const styles = StyleSheet.create({
   },
   calendarOverlay: {
     flex: 1,
-    backgroundColor: '#00000088',
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
   calendarCard: {
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 12,
   },
   calendarHeader: {
@@ -1610,7 +1610,7 @@ const styles = StyleSheet.create({
   },
   calendarNavBtn: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     width: 30,
     height: 30,
     alignItems: 'center',
@@ -1643,7 +1643,7 @@ const styles = StyleSheet.create({
   dayCell: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
@@ -1668,7 +1668,7 @@ const styles = StyleSheet.create({
   key: {
     width: '31%',
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,

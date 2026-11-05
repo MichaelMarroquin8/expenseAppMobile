@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchQuote } from '../../backend/marketQuotes';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { ConfirmModal, PremiumCard, Screen } from '../../components/ui';
+import { ConfirmModal, Field, PremiumCard, Screen } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
   formatAmountInput,
@@ -201,7 +201,7 @@ export function InvestmentHoldingScreen() {
         <PremiumCard>
           <Text style={[styles.label, { color: theme.textMuted }]}>Símbolo (ticker)</Text>
           <View style={styles.row}>
-            <TextInput
+            <Field
               value={symbol}
               onChangeText={setSymbol}
               autoCapitalize="characters"
@@ -225,7 +225,7 @@ export function InvestmentHoldingScreen() {
           </View>
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Nombre (opcional)</Text>
-          <TextInput
+          <Field
             value={name}
             onChangeText={setName}
             placeholder="Apple, S&P 500…"
@@ -235,7 +235,7 @@ export function InvestmentHoldingScreen() {
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Cantidad (acciones o fracción)</Text>
           <View style={styles.row}>
-            <TextInput
+            <Field
               value={formatQuantityInput(quantityRaw)}
               onChangeText={(value) => setQuantityRaw(parseQuantityInput(value))}
               keyboardType="decimal-pad"
@@ -257,7 +257,7 @@ export function InvestmentHoldingScreen() {
           </Text>
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Precio unitario ({currency})</Text>
-          <TextInput
+          <Field
             value={formatAmountInput(priceRaw, currency)}
             onChangeText={(value) => setPriceRaw(parseAmountInput(value, currency))}
             keyboardType="decimal-pad"
@@ -281,7 +281,7 @@ export function InvestmentHoldingScreen() {
           ) : null}
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
-          <TextInput
+          <Field
             value={note}
             onChangeText={setNote}
             placeholder="Compra de enero"

@@ -9,13 +9,13 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateField } from '../../components/DateField';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { ConfirmModal, PremiumCard, Screen } from '../../components/ui';
+import { ConfirmModal, Field, PremiumCard, Screen } from '../../components/ui';
+import { inkSeries } from '../../core/theme/tokens';
 import { CURRENCIES, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
@@ -43,7 +43,7 @@ type AccountFormParams = {
   AccountForm: { accountId?: string } | undefined;
 };
 
-const palette = ['#2563EB', '#A855F7', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#0EA5E9'];
+const palette: readonly string[] = inkSeries;
 const QUICK_CURRENCIES = ['COP', 'USD', 'EUR', 'MXN'];
 
 type DebtDraft = {
@@ -296,7 +296,7 @@ export function AccountFormScreen() {
 
         <PremiumCard>
           <Text style={[styles.label, { color: theme.textMuted }]}>Nombre de la cuenta</Text>
-          <TextInput
+          <Field
             value={name}
             onChangeText={setName}
             placeholder={investmentMode ? 'Ej. Hapi, XTB, Trii' : 'Ej. Bancolombia, Efectivo'}
@@ -399,7 +399,7 @@ export function AccountFormScreen() {
           ) : receivableMode ? (
             <>
               <Text style={[styles.label, { color: theme.textMuted }]}>Persona</Text>
-              <TextInput
+              <Field
                 value={draftPerson}
                 onChangeText={setDraftPerson}
                 placeholder="Ej. Yuli"
@@ -407,7 +407,7 @@ export function AccountFormScreen() {
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
               <Text style={[styles.label, { color: theme.textMuted }]}>Monto prestado</Text>
-              <TextInput
+              <Field
                 value={formatAmountInput(draftAmount, currency)}
                 onChangeText={(value) => setDraftAmount(parseAmountInput(value, currency))}
                 keyboardType="decimal-pad"
@@ -422,7 +422,7 @@ export function AccountFormScreen() {
                 accessibilityLabel="Elegir la fecha del préstamo"
               />
               <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
-              <TextInput
+              <Field
                 value={draftNote}
                 onChangeText={setDraftNote}
                 placeholder="Préstamo personal"
@@ -469,7 +469,7 @@ export function AccountFormScreen() {
                   <Text style={[styles.label, { color: theme.textMuted }]}>
                     Total por cobrar, sin desglosar (opcional)
                   </Text>
-                  <TextInput
+                  <Field
                     value={formatAmountInput(balanceRaw, currency)}
                     onChangeText={(value) => setBalanceRaw(parseAmountInput(value, currency))}
                     keyboardType="decimal-pad"
@@ -488,7 +488,7 @@ export function AccountFormScreen() {
               <Text style={[styles.label, { color: theme.textMuted }]}>
                 {liabilityMode ? 'Importe inicial (deuda)' : 'Importe inicial (saldo)'}
               </Text>
-              <TextInput
+              <Field
                 value={formatAmountInput(balanceRaw, currency)}
                 onChangeText={(value) => setBalanceRaw(parseAmountInput(value, currency))}
                 keyboardType="decimal-pad"
@@ -500,7 +500,7 @@ export function AccountFormScreen() {
           )}
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Entidad / proveedor (opcional)</Text>
-          <TextInput
+          <Field
             value={provider}
             onChangeText={setProvider}
             placeholder="Bancolombia, Nequi, Trii..."
@@ -540,7 +540,7 @@ export function AccountFormScreen() {
           </View>
 
           <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
-          <TextInput
+          <Field
             value={note}
             onChangeText={setNote}
             placeholder="Opcional"

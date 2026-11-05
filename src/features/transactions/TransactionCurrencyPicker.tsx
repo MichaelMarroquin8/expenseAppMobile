@@ -7,7 +7,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import {
   CurrencyOption,
   findCurrency,
 } from '../../core/constants/currencies';
+import { Field } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 
 interface TransactionCurrencyPickerProps {
@@ -104,7 +104,7 @@ export function TransactionCurrencyPicker({
           {searchOpen ? (
             <View style={styles.searchBar}>
               <Ionicons name="search" size={20} color={theme.textMuted} />
-              <TextInput
+              <Field
                 autoFocus
                 value={query}
                 onChangeText={setQuery}

@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { Field, PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { CategoryKind, useFinanceStore } from '../../store/useFinanceStore';
 
@@ -25,6 +25,29 @@ const iconOptions: Array<keyof typeof Ionicons.glyphMap> = [
   'fitness-outline',
   'school-outline',
   'pricetag-outline',
+  'person-outline',
+  'card-outline',
+  'speedometer-outline',
+  'body-outline',
+  'bus-outline',
+  'people-outline',
+  'wifi-outline',
+  'chatbubble-outline',
+  'happy-outline',
+  'leaf-outline',
+  'calendar-outline',
+  'nutrition-outline',
+  'airplane-outline',
+  'bag-handle-outline',
+  'bag-outline',
+  'wine-outline',
+  'desktop-outline',
+  'cart-outline',
+  'cut-outline',
+  'paw-outline',
+  'film-outline',
+  'bicycle-outline',
+  'logo-steam',
 ];
 
 const protectedCategories = ['Otros', 'Salario', 'Otros ingresos'];
@@ -77,7 +100,7 @@ export function CategoriesScreen() {
         </View>
 
         <View style={styles.addRow}>
-          <TextInput
+          <Field
             value={newCategory}
             onChangeText={setNewCategory}
             placeholder={kind === 'income' ? 'Nueva categoría de ingreso' : 'Nueva categoría de gasto'}
@@ -193,7 +216,7 @@ const styles = StyleSheet.create({
   iconChoice: {
     width: 38,
     height: 38,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

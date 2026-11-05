@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { Field, PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, getCurrencyFractionDigits, parseAmountInput } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
@@ -49,14 +49,14 @@ export function GoalsScreen() {
 
         <PremiumCard>
           <Text style={[styles.formTitle, { color: theme.text }]}>Nueva meta de ahorro</Text>
-          <TextInput
+          <Field
             value={title}
             onChangeText={setTitle}
             placeholder="Nombre de la meta (ej. Fondo de emergencia, Viaje)"
             placeholderTextColor={theme.textMuted}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
-          <TextInput
+          <Field
             value={formatAmountInput(targetRaw, currency)}
             onChangeText={(value) => setTargetRaw(parseAmountInput(value, currency))}
             placeholder={`Monto objetivo (${currency})`}
@@ -65,7 +65,7 @@ export function GoalsScreen() {
             keyboardAppearance={activeMode === 'dark' ? 'dark' : 'light'}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
-          <TextInput
+          <Field
             value={formatAmountInput(autoRaw, currency)}
             onChangeText={(value) => setAutoRaw(parseAmountInput(value, currency))}
             placeholder={`Aporte mensual planeado opcional (${currency})`}

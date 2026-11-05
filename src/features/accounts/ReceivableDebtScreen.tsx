@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateField } from '../../components/DateField';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { ConfirmModal, PremiumCard, Screen } from '../../components/ui';
+import { ConfirmModal, Field, PremiumCard, Screen } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
   dateInputToIso,
@@ -228,7 +228,7 @@ export function ReceivableDebtScreen() {
 
         <PremiumCard>
           <Text style={[styles.label, { color: theme.textMuted }]}>Persona</Text>
-          <TextInput
+          <Field
             value={personName}
             onChangeText={setPersonName}
             placeholder="Ej. Yuli"
@@ -237,7 +237,7 @@ export function ReceivableDebtScreen() {
             keyboardAppearance={activeMode === 'dark' ? 'dark' : 'light'}
           />
           <Text style={[styles.label, { color: theme.textMuted }]}>Monto prestado</Text>
-          <TextInput
+          <Field
             value={formatAmountInput(principalRaw, currency)}
             onChangeText={(value) => setPrincipalRaw(parseAmountInput(value, currency))}
             placeholder="400000"
@@ -253,7 +253,7 @@ export function ReceivableDebtScreen() {
             accessibilityLabel="Elegir la fecha del préstamo"
           />
           <Text style={[styles.label, { color: theme.textMuted }]}>Nota (opcional)</Text>
-          <TextInput
+          <Field
             value={note}
             onChangeText={setNote}
             placeholder="Préstamo personal"
@@ -328,7 +328,7 @@ export function ReceivableDebtScreen() {
               Pendiente actual: {formatMoney(outstanding, currency)}.
             </Text>
             <Text style={[styles.label, { color: theme.textMuted }]}>Monto del abono</Text>
-            <TextInput
+            <Field
               value={formatAmountInput(paymentRaw, currency)}
               onChangeText={(value) => setPaymentRaw(parseAmountInput(value, currency))}
               placeholder="100000"
@@ -344,7 +344,7 @@ export function ReceivableDebtScreen() {
               accessibilityLabel="Elegir la fecha del abono"
             />
             <Text style={[styles.label, { color: theme.textMuted }]}>Nota del abono (opcional)</Text>
-            <TextInput
+            <Field
               value={paymentNote}
               onChangeText={setPaymentNote}
               placeholder="Transferencia"
@@ -418,8 +418,8 @@ const styles = StyleSheet.create({
   kicker: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
   heroAmount: { fontSize: 28, fontWeight: '800', marginTop: 4 },
   heroMeta: { fontSize: 12, marginTop: 8 },
-  track: { height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 12 },
-  trackFill: { height: 6, borderRadius: 3 },
+  track: { height: 6, borderRadius: 999, overflow: 'hidden', marginTop: 12 },
+  trackFill: { height: 6, borderRadius: 999 },
   label: { fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 4 },
   sectionLabel: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
   helper: { fontSize: 12, lineHeight: 17, marginBottom: 8 },

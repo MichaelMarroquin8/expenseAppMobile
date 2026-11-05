@@ -6,6 +6,7 @@ import Svg, { Circle, G } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
+import { inkSeries } from '../../core/theme/tokens';
 import { formatMoney, monthKey } from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import type { CategoryPeriodParams } from './CategoryPeriodScreen';
@@ -20,18 +21,7 @@ interface CategorySlice {
   synthetic?: boolean;
 }
 
-const CHART_COLORS = [
-  '#FBBF24',
-  '#3B82F6',
-  '#EC4899',
-  '#14B8A6',
-  '#22C55E',
-  '#A855F7',
-  '#F97316',
-  '#EF4444',
-  '#06B6D4',
-  '#84CC16',
-];
+const CHART_COLORS: readonly string[] = inkSeries;
 
 const formatCompactTotal = (value: number, currency: string): string => {
   if (currency === 'COP' || currency === 'CLP') {
@@ -446,7 +436,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   donutCenter: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,

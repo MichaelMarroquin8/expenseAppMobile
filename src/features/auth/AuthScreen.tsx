@@ -5,8 +5,9 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { FacebookAuthProvider, GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { firebaseAuth } from '../../backend/firebase';
+import { Field } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { useAuth } from './AuthProvider';
 
@@ -138,7 +139,7 @@ export function AuthForm() {
             : 'Entra para sincronizar tus finanzas entre dispositivos.'}
         </Text>
 
-        <TextInput
+        <Field
           value={email}
           onChangeText={setEmail}
           placeholder="Correo"
@@ -150,7 +151,7 @@ export function AuthForm() {
           style={[styles.input, { color: theme.text, borderColor: theme.border }]}
         />
         <View style={styles.passwordWrap}>
-          <TextInput
+          <Field
             value={password}
             onChangeText={setPassword}
             placeholder="Contraseña"
@@ -174,7 +175,7 @@ export function AuthForm() {
         </View>
         {mode === 'signup' ? (
           <View style={styles.passwordWrap}>
-            <TextInput
+            <Field
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Confirmar contraseña"

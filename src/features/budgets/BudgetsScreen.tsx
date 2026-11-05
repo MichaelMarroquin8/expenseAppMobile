@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
-import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
+import { Field, PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { formatAmountInput, formatMoney, monthKey, monthKeyFromIso, parseAmountInput } from '../../core/utils/format';
 import { isBalanceAdjustment } from '../../domain/accounts';
@@ -83,7 +83,7 @@ export function BudgetsScreen() {
               </Pressable>
             ))}
           </ScrollView>
-          <TextInput
+          <Field
             value={formatAmountInput(limitRaw, currency)}
             onChangeText={(value) => setLimitRaw(parseAmountInput(value, currency))}
             placeholder="Límite del presupuesto"

@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 12,
     marginBottom: 16,
   },
@@ -274,11 +274,11 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, marginTop: 2 },
   track: {
     height: 6,
-    borderRadius: 3,
+    borderRadius: 999,
     overflow: 'hidden',
     marginTop: 12,
   },
-  trackFill: { height: 6, borderRadius: 3 },
+  trackFill: { height: 6, borderRadius: 999 },
   figures: {
     flexDirection: 'row',
     justifyContent: 'space-between',

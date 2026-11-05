@@ -136,6 +136,8 @@ interface FinanceState {
   transactionCategories: string[];
   incomeCategories: string[];
   categoryIcons: Record<string, string>;
+  /** Migración local: evita volver a insertar el catálogo si el usuario borra una categoría. */
+  categoryCatalogVersion: number;
   accounts: FinanceAccount[];
   receivables: ReceivableDebt[];
   holdings: InvestmentHolding[];
@@ -184,7 +186,48 @@ interface FinanceState {
   updateSettings: (settings: Partial<AppSettings>) => void;
 }
 
-const defaultTransactionCategories = [
+const CATEGORY_CATALOG_VERSION = 1;
+
+/** Categorías copiadas de la cuenta de Money Tracker, en el orden de la grilla. */
+const personalExpenseCatalog: Array<{ name: string; icon: string }> = [
+  { name: 'Yo', icon: 'person-outline' },
+  { name: 'Tarjetas', icon: 'card-outline' },
+  { name: 'Regalos', icon: 'gift-outline' },
+  { name: 'Gasolina', icon: 'speedometer-outline' },
+  { name: 'Hogar', icon: 'home-outline' },
+  { name: 'gym', icon: 'body-outline' },
+  { name: 'uber', icon: 'bus-outline' },
+  { name: 'Social', icon: 'people-outline' },
+  { name: 'internet', icon: 'wifi-outline' },
+  { name: 'Educación', icon: 'school-outline' },
+  { name: 'plan móvil', icon: 'chatbubble-outline' },
+  { name: 'ayudas', icon: 'happy-outline' },
+  { name: 'flores', icon: 'leaf-outline' },
+  { name: 'regalos lu', icon: 'calendar-outline' },
+  { name: 'consolas', icon: 'game-controller-outline' },
+  { name: 'Ropa', icon: 'shirt-outline' },
+  { name: 'steam', icon: 'logo-steam' },
+  { name: 'comida callejera', icon: 'fast-food-outline' },
+  { name: 'arepa de choclo', icon: 'nutrition-outline' },
+  { name: 'Hamburguesa', icon: 'fast-food-outline' },
+  { name: 'Salchi papa', icon: 'fast-food-outline' },
+  { name: 'Viajes', icon: 'airplane-outline' },
+  { name: 'aliexpress', icon: 'bag-handle-outline' },
+  { name: 'Temu', icon: 'bag-outline' },
+  { name: 'Olimpica', icon: 'basket-outline' },
+  { name: 'Super inter', icon: 'storefront-outline' },
+  { name: 'Bebidas', icon: 'wine-outline' },
+  { name: 'D1', icon: 'bag-outline' },
+  { name: 'Amazom', icon: 'bag-handle-outline' },
+  { name: 'Electrónicos', icon: 'desktop-outline' },
+  { name: 'Compras', icon: 'cart-outline' },
+  { name: 'Peluqueada', icon: 'cut-outline' },
+  { name: 'Mascotas', icon: 'paw-outline' },
+  { name: 'Cine', icon: 'film-outline' },
+  { name: 'reparación moto', icon: 'bicycle-outline' },
+];
+
+const legacyExpenseCategories = [
   'Comida',
   'Transporte',
   'Supermercado',
@@ -192,6 +235,23 @@ const defaultTransactionCategories = [
   'Servicios',
   'Otros',
 ];
+
+const appendMissingCategories = (current: string[], incoming: string[]): string[] => {
+  const next = current.filter((item) => typeof item === 'string' && item.trim().length > 0);
+  const seen = new Set(next.map((item) => item.toLowerCase()));
+  for (const name of incoming) {
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(name);
+  }
+  return next;
+};
+
+const defaultTransactionCategories = appendMissingCategories(
+  personalExpenseCatalog.map((item) => item.name),
+  legacyExpenseCategories,
+);
 
 const defaultIncomeCategories = [
   'Salario',
@@ -203,6 +263,7 @@ const defaultIncomeCategories = [
 ];
 
 const defaultCategoryIcons: Record<string, string> = {
+  ...Object.fromEntries(personalExpenseCatalog.map((item) => [item.name, item.icon])),
   Comida: 'fast-food-outline',
   Transporte: 'car-outline',
   Supermercado: 'basket-outline',
@@ -313,6 +374,7 @@ export const useFinanceStore = create<FinanceState>()(
       transactionCategories: defaultTransactionCategories,
       incomeCategories: defaultIncomeCategories,
       categoryIcons: defaultCategoryIcons,
+      categoryCatalogVersion: CATEGORY_CATALOG_VERSION,
       accounts: [],
       receivables: [],
       holdings: [],
@@ -792,6 +854,15 @@ export const useFinanceStore = create<FinanceState>()(
           Array.isArray(persisted.transactionCategories) && persisted.transactionCategories.length > 0
             ? persisted.transactionCategories.filter((item) => item !== 'Salario')
             : currentState.transactionCategories;
+        const storedCatalogVersion =
+          typeof persisted.categoryCatalogVersion === 'number' ? persisted.categoryCatalogVersion : 0;
+        const seededExpenseCategories =
+          storedCatalogVersion < CATEGORY_CATALOG_VERSION
+            ? appendMissingCategories(
+                rawExpenseCategories,
+                personalExpenseCatalog.map((item) => item.name),
+              )
+            : rawExpenseCategories;
         const rawIncomeCategories =
           Array.isArray(persisted.incomeCategories) && persisted.incomeCategories.length > 0
             ? persisted.incomeCategories
@@ -811,7 +882,8 @@ export const useFinanceStore = create<FinanceState>()(
           smsDetections: persistedDetections,
           onboardingDone: coerceBoolean(persisted.onboardingDone, currentState.onboardingDone),
           transactionCategories:
-            rawExpenseCategories.length > 0 ? rawExpenseCategories : currentState.transactionCategories,
+            seededExpenseCategories.length > 0 ? seededExpenseCategories : currentState.transactionCategories,
+          categoryCatalogVersion: Math.max(storedCatalogVersion, CATEGORY_CATALOG_VERSION),
           incomeCategories: rawIncomeCategories,
           categoryIcons: {
             ...defaultCategoryIcons,
@@ -852,6 +924,7 @@ export const useFinanceStore = create<FinanceState>()(
         transactionCategories: state.transactionCategories,
         incomeCategories: state.incomeCategories,
         categoryIcons: state.categoryIcons,
+        categoryCatalogVersion: state.categoryCatalogVersion,
         accounts: state.accounts,
         receivables: state.receivables,
         holdings: state.holdings,

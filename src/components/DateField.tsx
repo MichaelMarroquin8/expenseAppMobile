@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 12,
   },
   header: {
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   navBtn: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     width: 32,
     height: 32,
     alignItems: 'center',
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   day: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,

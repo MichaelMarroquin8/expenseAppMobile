@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -13,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { convertToBase, getExchangeRates } from '../../backend/exchangeRates';
-import { PremiumCard, Screen } from '../../components/ui';
+import { Field, PremiumCard, Screen } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import {
   formatAmountInput,
@@ -99,23 +98,18 @@ export function AccountDetailScreen() {
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => monthKey());
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustRaw, setAdjustRaw] = useState('');
-  const [adjustKeyboard, setAdjustKeyboard] = useState(0);
+  const adjustInputRef = useRef<TextInput>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [rates, setRates] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
-    if (!adjustOpen) {
-      setAdjustKeyboard(0);
-      return;
-    }
-    // Android ya encoge la ventana hasta el teclado. Solo hace falta un margen corto.
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setAdjustKeyboard(20));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setAdjustKeyboard(0));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
+    if (!adjustOpen) return;
+    // El foco va al importe en cuanto abre el modal. En Android el diálogo
+    // se desplaza solo si el campo queda bajo el teclado, así que el campo
+    // vive en la parte alta y no hace falta empujar la hoja hacia abajo.
+    const timer = setTimeout(() => adjustInputRef.current?.focus(), 80);
+    return () => clearTimeout(timer);
   }, [adjustOpen]);
 
   useLayoutEffect(() => {
@@ -291,7 +285,7 @@ export function AccountDetailScreen() {
           { paddingBottom: Math.max(insets.bottom + 96, 120) },
         ]}
       >
-        <PremiumCard style={[styles.hero, { borderLeftColor: account.color }]}>
+        <PremiumCard style={[styles.hero, { borderColor: account.color }]}>
           <View style={styles.watermark} pointerEvents="none">
             <Ionicons name={iconName} size={78} color={theme.textMuted} style={{ opacity: 0.22 }} />
           </View>
@@ -448,50 +442,54 @@ export function AccountDetailScreen() {
         }}
       />
 
-      <Modal visible={adjustOpen} transparent animationType="fade" onRequestClose={() => setAdjustOpen(false)}>
-        <Pressable
-          style={[
-            styles.modalBackdrop,
-            adjustKeyboard > 0 && styles.modalAboveKeyboard,
-            {
-              paddingTop: insets.top + 12,
-              paddingBottom: adjustKeyboard > 0 ? adjustKeyboard : Math.max(insets.bottom, 24),
-            },
-          ]}
-          onPress={() => setAdjustOpen(false)}
-        >
-          <Pressable
-            style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => undefined}
-          >
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Ajustar saldo</Text>
-              <Text style={[styles.modalHint, { color: theme.textMuted }]}>
-                Escribe el saldo real. La diferencia queda en el historial como “Ajustar importe”.
-              </Text>
-              <TextInput
+      <Modal
+        visible={adjustOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setAdjustOpen(false)}
+      >
+        <View style={[styles.modalBackdrop, { paddingTop: insets.top + 24 }]}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Ajustar saldo</Text>
+            <Text style={[styles.modalHint, { color: theme.textMuted }]}>
+              Escribe el saldo real. La diferencia queda en el historial como “Ajustar importe”.
+            </Text>
+            <View style={styles.amountLine}>
+              <Text style={[styles.amountCurrency, { color: theme.textMuted }]}>{account.currency}</Text>
+              <Field
+                ref={adjustInputRef}
                 value={formatAmountInput(adjustRaw, account.currency)}
                 onChangeText={(value) => setAdjustRaw(parseAmountInput(value, account.currency))}
                 keyboardType="decimal-pad"
+                selectTextOnFocus
                 placeholder="0"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.modalInput, { color: theme.text, borderColor: theme.border }]}
               />
-              <View style={styles.modalActions}>
-                <Pressable
-                  onPress={() => setAdjustOpen(false)}
-                  style={[styles.modalAction, { borderWidth: 1, borderColor: theme.border }]}
-                >
-                  <Text style={[styles.modalActionText, { color: theme.text }]}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  onPress={saveAdjustment}
-                  style={[styles.modalAction, { backgroundColor: theme.primary }]}
-                >
-                  <Text style={[styles.modalActionText, { color: '#fff' }]}>Guardar</Text>
-                </Pressable>
-              </View>
-          </Pressable>
-        </Pressable>
+            </View>
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setAdjustOpen(false)}
+                style={[styles.modalAction, { borderWidth: 1, borderColor: theme.border }]}
+              >
+                <Text style={[styles.modalActionText, { color: theme.text }]}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={saveAdjustment}
+                style={[styles.modalAction, { backgroundColor: theme.primary }]}
+              >
+                <Text style={[styles.modalActionText, { color: '#fff' }]}>Guardar</Text>
+              </Pressable>
+            </View>
+          </View>
+          <Pressable
+            style={styles.modalDismiss}
+            onPress={() => setAdjustOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar ajuste de saldo"
+          />
+        </View>
       </Modal>
     </Screen>
   );
@@ -502,7 +500,6 @@ const styles = StyleSheet.create({
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   headerBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   hero: {
-    borderLeftWidth: 4,
     overflow: 'hidden',
   },
   watermark: {
@@ -579,16 +576,19 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
   modalBackdrop: {
     flex: 1,
-    justifyContent: 'center',
     paddingHorizontal: 16,
     backgroundColor: 'rgba(2, 6, 23, 0.72)',
   },
-  modalAboveKeyboard: {
-    justifyContent: 'flex-end',
+  modalDismiss: {
+    flex: 1,
   },
   modalCard: {
     borderWidth: 1,
@@ -597,14 +597,21 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: '800' },
   modalHint: { marginTop: 6, fontSize: 13, lineHeight: 18 },
+  amountLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+  },
+  amountCurrency: { fontSize: 13, fontWeight: '700' },
   modalInput: {
+    flex: 1,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 14,
-    fontSize: 18,
-    fontWeight: '700',
+    paddingVertical: 12,
+    fontSize: 28,
+    fontWeight: '800',
   },
   modalActions: {
     flexDirection: 'row',

@@ -4,12 +4,11 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardSafeScroll } from "../../components/KeyboardSafeScroll";
-import { PremiumCard, Screen, SectionTitle } from "../../components/ui";
+import { Field, PremiumCard, Screen, SectionTitle } from "../../components/ui";
 import { useAppTheme } from "../../core/theme/ThemeProvider";
 import {
   formatAmountInput,
@@ -148,7 +147,7 @@ export function SmsInboxScreen() {
               </View>
               {editingDetectionId === item.id ? (
                 <View style={styles.editAmountBox}>
-                  <TextInput
+                  <Field
                     value={formatAmountInput(editingAmountRaw, currency)}
                     onChangeText={(val) => setEditingAmountRaw(parseAmountInput(val, currency))}
                     placeholder="Nuevo monto"
@@ -261,14 +260,14 @@ export function SmsInboxScreen() {
                   </Pressable>
                 ))}
               </View>
-              <TextInput
+              <Field
                 value={manualSender}
                 onChangeText={setManualSender}
                 placeholder={manualChannel === "sms" ? "Remitente (85540)" : "Correo remitente"}
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
-              <TextInput
+              <Field
                 value={manualMessage}
                 onChangeText={setManualMessage}
                 placeholder="Pega aquí el contenido..."
@@ -365,7 +364,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 8, marginTop: 12 },
   actionBtn: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     paddingVertical: 10,
   },
