@@ -207,6 +207,24 @@ export function InsightsScreen() {
         ]
       : topLegend;
 
+  const weekRows = useMemo(() => {
+    if (periodMode !== 'month') return [];
+    const buckets = new Map<string, number>();
+    for (const tx of periodTransactions) {
+      const date = new Date(tx.occurredAt);
+      if (Number.isNaN(date.getTime())) continue;
+      const first = new Date(date.getFullYear(), date.getMonth(), 1);
+      const diffDays = Math.floor((date.getTime() - first.getTime()) / 86400000);
+      const week = Math.floor(Math.max(diffDays, 0) / 7) + 1;
+      const key = `Semana ${week}`;
+      buckets.set(key, (buckets.get(key) ?? 0) + tx.amount);
+    }
+    const max = Math.max(1, ...buckets.values());
+    return [...buckets.entries()]
+      .sort((left, right) => Number(left[0].replace(/\D/g, '')) - Number(right[0].replace(/\D/g, '')))
+      .map(([label, amount]) => ({ label, amount, ratio: amount / max }));
+  }, [periodMode, periodTransactions]);
+
   const periodTitle =
     periodMode === 'month'
       ? selectedMonthOffset === 0
@@ -224,7 +242,7 @@ export function InsightsScreen() {
           { paddingBottom: Math.max(insets.bottom + 170, 190) },
         ]}
       >
-        <SectionTitle title="Gráficos" subtitle="Consolidado mensual y anual por categoría" />
+        <SectionTitle title="Gráficos" subtitle="En qué se fue el dinero" />
 
         <View style={styles.kindRow}>
           {(['expense', 'income'] as const).map((option) => {
@@ -373,9 +391,51 @@ export function InsightsScreen() {
                 </View>
                 <View style={styles.categoryContent}>
                   <View style={styles.categoryHeader}>
-                    <Text style={[styles.categoryName, { color: theme.text }]}>{item.category}</Text>
+                    <Text style={[styles.categoryName, { color: theme.text }]} numberOfLines={1}>
+                      {item.category}
+                    </Text>
                     <Text style={[styles.categoryAmount, { color: theme.text }]}>
                       {formatMoney(item.amount, currency)}
+                    </Text>
+                  </View>
+                  <View style={styles.categoryMeta}>
+                    <View style={[styles.track, { backgroundColor: theme.border }]}>
+                      <View
+                        style={[
+                          styles.fill,
+                          {
+                            width: `${Math.max(4, item.percent)}%`,
+                            backgroundColor: item.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.categoryPercent, { color: theme.textMuted }]}>
+                      {item.percent.toFixed(0)}%
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+              </Pressable>
+            ))
+          )}
+        </PremiumCard>
+
+        {periodMode === 'month' ? (
+          <PremiumCard>
+            <SectionTitle
+              title={kind === 'expense' ? 'Gasto por semana' : 'Ingreso por semana'}
+              subtitle="El ritmo del mes que estás viendo"
+            />
+            {weekRows.length === 0 ? (
+              <Text style={[styles.emptyText, { color: theme.textMuted }]}>Sin movimientos en este mes.</Text>
+            ) : (
+              weekRows.map((week) => (
+                <View key={week.label} style={styles.weekRow}>
+                  <View style={styles.categoryHeader}>
+                    <Text style={[styles.categoryName, { color: theme.text }]}>{week.label}</Text>
+                    <Text style={[styles.categoryAmount, { color: theme.text }]}>
+                      {formatMoney(week.amount, currency)}
                     </Text>
                   </View>
                   <View style={[styles.track, { backgroundColor: theme.border }]}>
@@ -383,21 +443,17 @@ export function InsightsScreen() {
                       style={[
                         styles.fill,
                         {
-                          width: `${Math.max(4, item.percent)}%`,
-                          backgroundColor: item.color,
+                          width: `${Math.max(6, week.ratio * 100)}%`,
+                          backgroundColor: theme.primary,
                         },
                       ]}
                     />
                   </View>
-                  <Text style={[styles.categoryPercent, { color: theme.textMuted }]}>
-                    {item.percent.toFixed(2)}% del total
-                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-              </Pressable>
-            ))
-          )}
-        </PremiumCard>
+              ))
+            )}
+          </PremiumCard>
+        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -454,13 +510,14 @@ const styles = StyleSheet.create({
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 8,
+    minHeight: 48,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -468,17 +525,21 @@ const styles = StyleSheet.create({
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  categoryName: { fontWeight: '700', flex: 1 },
+  categoryName: { fontWeight: '700', flex: 1, fontSize: 14 },
   categoryAmount: { fontWeight: '700', fontSize: 13 },
+  categoryMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   track: {
-    height: 8,
+    flex: 1,
+    height: 6,
     borderRadius: 999,
     overflow: 'hidden',
   },
-  fill: { height: 8, borderRadius: 999 },
-  categoryPercent: { marginTop: 4, fontSize: 11 },
+  fill: { height: 6, borderRadius: 999 },
+  weekRow: { marginBottom: 12 },
+  categoryPercent: { width: 36, textAlign: 'right', fontSize: 12, fontWeight: '600' },
   emptyText: { fontSize: 13 },
 });

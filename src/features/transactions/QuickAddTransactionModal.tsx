@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -11,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,6 +40,7 @@ import {
   type AccountMovementRole,
 } from '../../domain/accounts';
 import { summarizePositions } from '../../domain/investments';
+import { budgetCrossingMessage } from '../../domain/budgets';
 import { FinanceAccount, Transaction } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { TransactionCurrencyPicker } from './TransactionCurrencyPicker';
@@ -148,7 +149,6 @@ export function QuickAddTransactionModal({
   const removeTransactionCategory = useFinanceStore((state) => state.removeTransactionCategory);
   const addTransaction = useFinanceStore((state) => state.addTransaction);
   const updateTransaction = useFinanceStore((state) => state.updateTransaction);
-  const amountInputRef = useRef<TextInput>(null);
   const ignoreNextCategoryPress = useRef(false);
 
   const [step, setStep] = useState<'category' | 'amount'>('category');
@@ -168,6 +168,7 @@ export function QuickAddTransactionModal({
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [entryCurrency, setEntryCurrency] = useState(defaultCurrency);
+  const [recurringRule, setRecurringRule] = useState<Transaction['recurringRule']>(undefined);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [categoryDeleteOpen, setCategoryDeleteOpen] = useState(false);
   const [rates, setRates] = useState<Record<string, number> | null>(null);
@@ -201,6 +202,7 @@ export function QuickAddTransactionModal({
       );
       setCardId(editingTransaction.cardId);
       setOccurredAtInput(toLocalDateInput(validDate));
+      setRecurringRule(editingTransaction.recurring ? editingTransaction.recurringRule : undefined);
       setCalendarMonth(new Date(validDate.getFullYear(), validDate.getMonth(), 1));
       setShowCalendar(false);
       setCurrencyPickerOpen(false);
@@ -238,6 +240,7 @@ export function QuickAddTransactionModal({
     setDestinationAccountId(startType === 'transfer' ? presetDestination : undefined);
     setTransferSlot(null);
     setOccurredAtInput(toLocalDateInput(new Date()));
+    setRecurringRule(undefined);
     setCalendarMonth(new Date());
     setShowCalendar(false);
     setEntryCurrency(defaultCurrency);
@@ -264,13 +267,6 @@ export function QuickAddTransactionModal({
       cancelled = true;
     };
   }, [open, entryCurrency, defaultCurrency]);
-
-  useEffect(() => {
-    if (!open || step !== 'amount') return;
-    if (type === 'transfer' && (!accountId || !destinationAccountId || transferSlot)) return;
-    const timer = setTimeout(() => amountInputRef.current?.focus(), 120);
-    return () => clearTimeout(timer);
-  }, [accountId, destinationAccountId, open, step, transferSlot, type]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -434,6 +430,27 @@ export function QuickAddTransactionModal({
       0,
     ).toISOString();
 
+    const warnBudget = () => {
+      if (type !== 'expense') return;
+      const state = useFinanceStore.getState();
+      const message = budgetCrossingMessage(
+        state.budgets,
+        state.transactions,
+        {
+          amount: persisted.amount,
+          category,
+          occurredAt,
+          alreadyIncluded: true,
+        },
+        state.settings.currency,
+      );
+      if (message) Alert.alert('Presupuesto', message);
+    };
+
+    const repetition = recurringRule
+      ? { recurring: true as const, recurringRule }
+      : { recurring: false as const, recurringRule: undefined };
+
     if (editingTransaction) {
       updateTransaction(editingTransaction.id, {
         type,
@@ -449,7 +466,9 @@ export function QuickAddTransactionModal({
         cardId: type === 'expense' ? cardId : undefined,
         paymentMethod: type === 'expense' && cardId ? 'card' : 'transfer',
         occurredAt,
+        ...repetition,
       });
+      warnBudget();
       close();
       return;
     }
@@ -469,9 +488,10 @@ export function QuickAddTransactionModal({
       cardId: type === 'expense' ? cardId : undefined,
       destinationAccountId: type === 'transfer' ? destinationAccountId : undefined,
       occurredAt,
-      recurring: false,
       source: 'manual',
+      ...repetition,
     });
+    warnBudget();
     close();
   };
 
@@ -814,7 +834,7 @@ export function QuickAddTransactionModal({
                         >
                           <Ionicons
                             name={iconFor(item)}
-                            size={22}
+                            size={16}
                             color={selected ? theme.primary : theme.textMuted}
                           />
                         </View>
@@ -953,17 +973,24 @@ export function QuickAddTransactionModal({
                         {entryCurrency}
                       </Text>
                     </Pressable>
-                    <Pressable style={styles.amountInputHit} onPress={() => Keyboard.dismiss()}>
-                      <Field
-                        ref={amountInputRef}
-                        value={formatAmountInput(amountRaw, entryCurrency)}
-                        onChangeText={(val) => setAmountRaw(parseAmountInput(val, entryCurrency))}
-                        onFocus={() => Keyboard.dismiss()}
-                        placeholder="0"
-                        placeholderTextColor={theme.textMuted}
-                        style={[styles.amountInput, { color: theme.text }]}
-                        showSoftInputOnFocus={false}
-                      />
+                    <Pressable
+                      style={styles.amountInputHit}
+                      onPress={() => Keyboard.dismiss()}
+                      accessibilityRole="text"
+                      accessibilityLabel={
+                        amountRaw
+                          ? `Monto ${formatAmountInput(amountRaw, entryCurrency)}`
+                          : 'Monto en cero'
+                      }
+                    >
+                      <Text
+                        style={[styles.amountValue, { color: amountRaw ? theme.text : theme.textMuted }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.65}
+                      >
+                        {formatAmountInput(amountRaw, entryCurrency) || '0'}
+                      </Text>
                     </Pressable>
                   </View>
                   {convertedPreview != null ? (
@@ -1106,6 +1133,37 @@ export function QuickAddTransactionModal({
                 </Pressable>
               </View>
               </>
+              ) : null}
+              <Text style={[styles.blockTitle, { color: theme.text, marginTop: 12 }]}>Repetición</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                {(
+                  [
+                    { id: undefined, label: 'Una vez' },
+                    { id: 'daily' as const, label: 'Cada día' },
+                    { id: 'weekly' as const, label: 'Cada semana' },
+                    { id: 'monthly' as const, label: 'Cada mes' },
+                  ] as const
+                ).map((option) => {
+                  const active = recurringRule === option.id;
+                  return (
+                    <Pressable
+                      key={option.label}
+                      style={[
+                        styles.chip,
+                        { borderColor: theme.border },
+                        active && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
+                      ]}
+                      onPress={() => setRecurringRule(option.id)}
+                    >
+                      <Text style={[styles.chipLabel, { color: active ? theme.primary : theme.text }]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {recurringRule ? (
+                <Text style={[styles.bannerHint, { color: theme.textMuted }]}>
+                  La siguiente copia se crea sola al abrir la app. Si borras una, no vuelve a aparecer.
+                </Text>
               ) : null}
             </KeyboardSafeScroll>
           )}
@@ -1489,10 +1547,11 @@ const styles = StyleSheet.create({
   },
   amountInputHit: {
     flex: 1,
+    minHeight: 32,
+    justifyContent: 'center',
   },
-  amountInput: {
-    paddingVertical: 0,
-    fontSize: 26,
+  amountValue: {
+    fontSize: 22,
     fontWeight: '800',
     textAlign: 'right',
   },
@@ -1502,7 +1561,7 @@ const styles = StyleSheet.create({
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    marginHorizontal: -4,
   },
   deleteCategoryBar: {
     flexDirection: 'row',
@@ -1519,9 +1578,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   categoryCell: {
-    width: '33.333%',
-    paddingHorizontal: 6,
-    paddingBottom: 12,
+    width: '25%',
+    paddingHorizontal: 4,
+    paddingBottom: 8,
     position: 'relative',
   },
   deleteBadge: {
@@ -1539,20 +1598,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 6,
-    minHeight: 112,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minHeight: 72,
   },
   categoryIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   categoryLabel: {
-    fontSize: 13,
+    fontSize: 11,
+    lineHeight: 13,
     textAlign: 'center',
     fontWeight: '600',
   },

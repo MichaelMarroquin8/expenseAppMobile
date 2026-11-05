@@ -173,36 +173,11 @@ export function TransactionsScreen() {
           { paddingBottom: Math.max(insets.bottom + 170, 190) },
         ]}
       >
-        <View style={styles.headerRow}>
-          <View style={styles.headerCopy}>
-            <Text style={[styles.headerTitle, { color: theme.text }]}>
-              Mis movimientos
-            </Text>
-            <Text style={[styles.headerSubtitle, { color: theme.textMuted }]}>
-              Libro diario de gastos e ingresos
-            </Text>
-          </View>
-
-          <PremiumCard style={styles.accountsCard}>
-            <Pressable
-              android_ripple={null}
-              style={styles.accountsLink}
-              onPress={() => navigation.navigate("Accounts")}
-            >
-              <Ionicons name="wallet-outline" size={16} color={theme.primary} />
-              <View>
-                <Text style={[styles.accountsTitle, { color: theme.text }]}>
-                  Cuentas
-                </Text>
-                <Text style={[styles.accountsMeta, { color: theme.textMuted }]}>
-                  {accounts.length === 1
-                    ? "1 cuenta"
-                    : `${accounts.length} cuentas`}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
-            </Pressable>
-          </PremiumCard>
+        <View style={styles.headerCopy}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Movimientos</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textMuted }]}>
+            El libro del mes que elijas
+          </Text>
         </View>
 
         <ScrollView
@@ -485,31 +460,9 @@ export function TransactionsScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 12,
-  },
-  headerCopy: { flex: 1 },
+  headerCopy: { marginBottom: 12 },
   headerTitle: { fontSize: 18, fontWeight: "700" },
   headerSubtitle: { fontSize: 13, marginTop: 2 },
-  accountsCard: {
-    padding: 0,
-    marginBottom: 0,
-    borderRadius: 20,
-    alignSelf: "center",
-  },
-  accountsLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  accountsTitle: { fontWeight: "700", fontSize: 13 },
-  accountsMeta: { fontSize: 11, marginTop: 1 },
   periodRow: {
     gap: 18,
     paddingHorizontal: 4,

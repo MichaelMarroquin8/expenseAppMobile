@@ -241,6 +241,10 @@ const applyCloudMerge = (cloud: StoredFinanceSnapshot | null, transactions: Tran
             settings: {
               ...current.settings,
               ...(cloud?.settings ?? {}),
+              balancesHidden:
+                typeof cloud?.settings?.balancesHidden === 'boolean'
+                  ? cloud.settings.balancesHidden
+                  : current.settings.balancesHidden,
             },
   });
 };

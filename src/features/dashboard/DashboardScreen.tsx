@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { convertToBase, getExchangeRates } from '../../backend/exchangeRates';
 import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
-import { formatMoney, formatShortDate, monthKey, monthKeyFromIso } from '../../core/utils/format';
+import { formatMoney, monthKey, monthKeyFromIso } from '../../core/utils/format';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { isBalanceAdjustment } from '../../domain/accounts';
-import { Transaction } from '../../domain/models';
+import { budgetSnapshots } from '../../domain/budgets';
+import { summarizeNetWorth } from '../../domain/netWorth';
+import { buildReminders } from '../../domain/reminders';
 import { useFinanceStore } from '../../store/useFinanceStore';
-import { QuickAddTransactionModal } from '../transactions/QuickAddTransactionModal';
+
+const HIDDEN_AMOUNT = '••••••';
 
 const Stat = ({ label, value, color }: { label: string; value: string; color: string }) => {
   return (
@@ -21,9 +27,58 @@ const Stat = ({ label, value, color }: { label: string; value: string; color: st
 export function DashboardScreen() {
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const transactions = useFinanceStore((state) => state.transactions);
+  const accounts = useFinanceStore((state) => state.accounts);
+  const holdings = useFinanceStore((state) => state.holdings);
+  const budgets = useFinanceStore((state) => state.budgets);
+  const goals = useFinanceStore((state) => state.goals);
+  const cards = useFinanceStore((state) => state.cards);
+  const remindersEnabled = useFinanceStore((state) => state.settings.remindersEnabled);
+  const balancesHidden = useFinanceStore((state) => state.settings.balancesHidden);
+  const updateSettings = useFinanceStore((state) => state.updateSettings);
   const currency = useFinanceStore((state) => state.settings.currency);
-  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getExchangeRates(currency)
+      .then((result) => {
+        if (!cancelled) setRates(result);
+      })
+      .catch(() => {
+        if (!cancelled) setRates({ [currency]: 1 });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currency]);
+
+  const toBase = useCallback(
+    (amount: number, code: string): number => {
+      if (code === currency) return amount;
+      if (!rates) return 0;
+      return convertToBase(amount, code, currency, rates) ?? 0;
+    },
+    [currency, rates],
+  );
+
+  const netWorth = useMemo(
+    () => summarizeNetWorth(accounts, holdings, currency, toBase, Boolean(rates)),
+    [accounts, currency, holdings, rates, toBase],
+  );
+  const currentMonth = monthKey();
+  const monthBudgets = useMemo(
+    () => budgetSnapshots(budgets, transactions, currentMonth),
+    [budgets, currentMonth, transactions],
+  );
+  const reminders = useMemo(
+    () =>
+      remindersEnabled
+        ? buildReminders({ cards, accounts, budgets, transactions, goals }, currency)
+        : [],
+    [accounts, budgets, cards, currency, goals, remindersEnabled, transactions],
+  );
   const summary = useMemo(() => {
     const ledger = transactions.filter((tx) => !isBalanceAdjustment(tx));
     const now = new Date();
@@ -37,123 +92,150 @@ export function DashboardScreen() {
     const prevExpenses = txLastMonth
       .filter((tx) => tx.type === 'expense')
       .reduce((acc, tx) => acc + tx.amount, 0);
-    const savings = income - expenses;
-    const balance = ledger.reduce(
-      (acc, tx) => acc + (tx.type === 'income' ? tx.amount : tx.type === 'expense' ? -tx.amount : 0),
-      0,
-    );
-    const categoryTotals = txThisMonth
-      .filter((tx) => tx.type === 'expense')
-      .reduce<Record<string, number>>((acc, tx) => {
-        acc[tx.category] = (acc[tx.category] ?? 0) + tx.amount;
-        return acc;
-      }, {});
-
     return {
       income,
       expenses,
-      savings,
-      balance,
       expenseVsLastMonth: prevExpenses === 0 ? 0 : ((expenses - prevExpenses) / prevExpenses) * 100,
-      categoryTotals,
-      latest: ledger.slice(0, 5),
     };
   }, [transactions]);
 
-  const categoryEntries = Object.entries(summary.categoryTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxCategory = categoryEntries[0]?.[1] ?? 1;
+  const money = (amount: number) => (balancesHidden ? HIDDEN_AMOUNT : formatMoney(amount, currency));
+  const tightestBudget = monthBudgets[0];
   const bottomOverlaySpacing = Math.max(insets.bottom + 170, 190);
 
   return (
     <Screen>
       <ScrollView contentContainerStyle={[styles.container, { paddingBottom: bottomOverlaySpacing }]}>
-        <SectionTitle title="Dashboard financiero" subtitle="Vista de tu salud financiera en tiempo real" />
+        <SectionTitle title="Hoy" subtitle="Patrimonio y cómo va el mes" />
 
         <PremiumCard>
-          <Text style={[styles.balanceLabel, { color: theme.textMuted }]}>Saldo actual</Text>
-          <Text style={[styles.balanceValue, { color: theme.text }]}>{formatMoney(summary.balance, currency)}</Text>
+          <View style={styles.balanceHeader}>
+            <Text style={[styles.balanceLabel, { color: theme.textMuted }]}>Patrimonio neto</Text>
+            <Pressable
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={balancesHidden ? 'Mostrar patrimonio' : 'Ocultar patrimonio'}
+              onPress={() => updateSettings({ balancesHidden: !balancesHidden })}
+            >
+              <Ionicons
+                name={balancesHidden ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={theme.textMuted}
+              />
+            </Pressable>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ver cuentas"
+            onPress={() => navigation.navigate('Accounts')}
+          >
+            <Text style={[styles.balanceValue, { color: theme.text }]}>{money(netWorth.net)}</Text>
+            <View style={styles.statsRow}>
+              <Stat label="Activos" value={money(netWorth.assets)} color={theme.text} />
+              <Stat label="Pasivos" value={money(netWorth.liabilities)} color={theme.warning} />
+            </View>
+            <Text style={[styles.comparison, { color: theme.textMuted }]}>
+              Disponible {money(netWorth.liquid)}
+              {!balancesHidden && netWorth.partial ? ' · falta alguna tasa de cambio' : ''}
+            </Text>
+          </Pressable>
+        </PremiumCard>
+
+        <PremiumCard>
+          <Text style={[styles.balanceLabel, { color: theme.textMuted }]}>Este mes</Text>
+          <View style={styles.statsRow}>
+            <Stat label="Ingresos" value={formatMoney(summary.income, currency)} color={theme.success} />
+            <Stat label="Gastos" value={formatMoney(summary.expenses, currency)} color={theme.danger} />
+          </View>
           <Text
             style={[
               styles.comparison,
               { color: summary.expenseVsLastMonth > 0 ? theme.warning : theme.success },
             ]}
           >
-            {summary.expenseVsLastMonth > 0 ? '+' : ''}
+            Gastos {summary.expenseVsLastMonth > 0 ? '+' : ''}
             {summary.expenseVsLastMonth.toFixed(1)}% vs mes anterior
           </Text>
         </PremiumCard>
 
-        <PremiumCard>
-          <View style={styles.statsRow}>
-            <Stat label="Ingresos mes" value={formatMoney(summary.income, currency)} color={theme.success} />
-            <Stat label="Gastos mes" value={formatMoney(summary.expenses, currency)} color={theme.danger} />
-          </View>
-          <View style={styles.statsRow}>
-            <Stat label="Ahorro mes" value={formatMoney(summary.savings, currency)} color={theme.primary} />
-            <Stat
-              label="Flujo neto"
-              value={formatMoney(summary.income - summary.expenses, currency)}
-              color={theme.text}
-            />
-          </View>
-        </PremiumCard>
-
-        <PremiumCard>
-          <SectionTitle title="Gastos por categoría" subtitle="Top del mes" />
-          {categoryEntries.length === 0 ? (
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>Aún no hay gastos registrados</Text>
-          ) : (
-            categoryEntries.map(([category, amount]) => (
-              <View key={category} style={styles.barItem}>
-                <View style={styles.barHeader}>
-                  <Text style={[styles.barLabel, { color: theme.text }]}>{category}</Text>
-                  <Text style={[styles.barValue, { color: theme.textMuted }]}>{formatMoney(amount, currency)}</Text>
-                </View>
-                <View style={[styles.track, { backgroundColor: theme.border }]}>
-                  <View
-                    style={[
-                      styles.fill,
-                      { width: `${Math.max(8, (amount / maxCategory) * 100)}%`, backgroundColor: theme.primary },
-                    ]}
-                  />
-                </View>
+        {tightestBudget ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ver presupuestos"
+            style={styles.cardPress}
+            onPress={() => navigation.navigate('Budgets')}
+          >
+            <PremiumCard>
+              <View style={styles.balanceHeader}>
+                <Text style={[styles.balanceLabel, { color: theme.textMuted }]}>Presupuesto</Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
               </View>
-            ))
-          )}
-        </PremiumCard>
-
-        <PremiumCard>
-          <SectionTitle title="Últimos movimientos" subtitle="Toca un movimiento para editar su monto o detalle" />
-          {summary.latest.map((tx) => (
-            <Pressable key={tx.id} style={styles.movement} onPress={() => setEditingTx(tx)}>
-              <View>
-                <Text style={[styles.merchant, { color: theme.text }]}>{tx.merchant}</Text>
-                <Text style={[styles.meta, { color: theme.textMuted }]}>
-                  {tx.category} • {formatShortDate(tx.occurredAt)}
-                </Text>
-              </View>
-              <View style={styles.movementRight}>
+              <View style={[styles.barHeader, { marginTop: 10 }]}>
+                <Text style={[styles.barLabel, { color: theme.text }]}>{tightestBudget.label}</Text>
                 <Text
                   style={[
-                    styles.amount,
-                    { color: tx.type === 'income' ? theme.success : tx.type === 'expense' ? theme.danger : theme.primary },
+                    styles.barValue,
+                    { color: tightestBudget.level === 'over' ? theme.danger : theme.textMuted },
                   ]}
                 >
-                  {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
-                  {formatMoney(tx.amount, currency)}
+                  {formatMoney(tightestBudget.spent, currency)} / {formatMoney(tightestBudget.limit, currency)}
                 </Text>
-                <Text style={[styles.editHint, { color: theme.primary }]}>Editar</Text>
               </View>
-            </Pressable>
-          ))}
-        </PremiumCard>
-      </ScrollView>
+              <View style={[styles.track, { backgroundColor: theme.border }]}>
+                <View
+                  style={[
+                    styles.fill,
+                    {
+                      width: `${Math.max(8, Math.min(100, tightestBudget.ratio * 100))}%`,
+                      backgroundColor:
+                        tightestBudget.level === 'over'
+                          ? theme.danger
+                          : tightestBudget.level === 'warning'
+                            ? theme.warning
+                            : theme.primary,
+                    },
+                  ]}
+                />
+              </View>
+              {monthBudgets.length > 1 ? (
+                <Text style={[styles.comparison, { color: theme.textMuted }]}>
+                  {monthBudgets.length - 1 === 1
+                    ? '1 presupuesto más'
+                    : `${monthBudgets.length - 1} presupuestos más`}
+                </Text>
+              ) : null}
+            </PremiumCard>
+          </Pressable>
+        ) : null}
 
-      <QuickAddTransactionModal
-        open={Boolean(editingTx)}
-        editingTransaction={editingTx}
-        onClose={() => setEditingTx(null)}
-      />
+        {reminders.length > 0 ? (
+          <PremiumCard>
+            <SectionTitle title="Avisos" subtitle="Corte, pago, presupuesto y metas" />
+            {reminders.map((reminder) => (
+              <View key={reminder.id} style={styles.reminder}>
+                <Text
+                  style={[
+                    styles.reminderTitle,
+                    {
+                      color:
+                        reminder.tone === 'danger'
+                          ? theme.danger
+                          : reminder.tone === 'warning'
+                            ? theme.warning
+                            : theme.primary,
+                    },
+                  ]}
+                >
+                  {reminder.title}
+                </Text>
+                <Text style={[styles.reminderBody, { color: theme.textMuted }]}>
+                  {reminder.body}
+                </Text>
+              </View>
+            ))}
+          </PremiumCard>
+        ) : null}
+      </ScrollView>
     </Screen>
   );
 }
@@ -161,6 +243,14 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
+  },
+  cardPress: {
+    width: '100%',
+  },
+  balanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   balanceLabel: {
     fontSize: 14,
@@ -171,8 +261,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   comparison: {
-    marginTop: 8,
+    marginTop: 4,
     fontWeight: '600',
+  },
+  reminder: {
+    marginBottom: 10,
+  },
+  reminderTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  reminderBody: {
+    marginTop: 2,
+    fontSize: 13,
+    lineHeight: 18,
   },
   statsRow: {
     flexDirection: 'row',
@@ -190,9 +292,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginTop: 4,
-  },
-  barItem: {
-    marginBottom: 12,
   },
   barHeader: {
     flexDirection: 'row',
@@ -213,34 +312,5 @@ const styles = StyleSheet.create({
   fill: {
     height: 8,
     borderRadius: 999,
-  },
-  movement: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#94a3b822',
-  },
-  merchant: {
-    fontWeight: '600',
-  },
-  meta: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  amount: {
-    fontWeight: '700',
-  },
-  movementRight: {
-    alignItems: 'flex-end',
-  },
-  editHint: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  emptyText: {
-    fontSize: 13,
   },
 });

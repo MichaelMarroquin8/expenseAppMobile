@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -36,6 +36,20 @@ function RootSwitch() {
 
   useEffect(() => {
     void SplashScreen.hideAsync();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    useFinanceStore.getState().catchUpAutomations();
+  }, [hydrated]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (status) => {
+      if (status === 'active' && useFinanceStore.persist.hasHydrated()) {
+        useFinanceStore.getState().catchUpAutomations();
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   const booting = (loading || !hydrated) && !bootTimedOut;

@@ -16,7 +16,6 @@ import { BudgetsScreen } from "../../features/budgets/BudgetsScreen";
 import { SmsInboxScreen } from "../../features/sms/SmsInboxScreen";
 import { SettingsScreen } from "../../features/settings/SettingsScreen";
 import { GoalsScreen } from "../../features/goals/GoalsScreen";
-import { ReportsScreen } from "../../features/reports/ReportsScreen";
 import { CardsScreen } from "../../features/cards/CardsScreen";
 import { CardDetailScreen } from "../../features/cards/CardDetailScreen";
 import { AccountsScreen } from "../../features/accounts/AccountsScreen";
@@ -33,7 +32,6 @@ import { TransactionDetailScreen } from "../../features/transactions/Transaction
 type RootStackParamList = {
   Tabs: undefined;
   Goals: undefined;
-  Reports: undefined;
   Cards: undefined;
   CardDetail: { cardId: string };
   Accounts: undefined;
@@ -247,11 +245,6 @@ export function MainNavigator() {
           name="Goals"
           component={GoalsScreen}
           options={{ title: "Metas" }}
-        />
-        <Stack.Screen
-          name="Reports"
-          component={ReportsScreen}
-          options={{ title: "Reportes" }}
         />
         <Stack.Screen
           name="Cards"

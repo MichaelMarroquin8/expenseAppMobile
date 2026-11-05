@@ -57,6 +57,10 @@ export interface Transaction {
   occurredAt: string;
   recurring: boolean;
   recurringRule?: 'daily' | 'weekly' | 'monthly';
+  /** Copia generada a partir de un movimiento recurrente. */
+  recurringSourceId?: string;
+  /** Periodos YYYY-MM-DD que este movimiento ya generó. Evita recrearlos si se borra la copia. */
+  generatedPeriods?: string[];
   source: 'manual' | 'sms' | 'notification';
   detectionId?: string;
 }
@@ -138,6 +142,8 @@ export interface SavingsGoal {
   currentAmount: number;
   targetDate?: string;
   autoContribution?: number;
+  /** Mes YYYY-MM en el que ya se aplicó el aporte automático. */
+  lastAutoAppliedMonth?: string;
 }
 
 export interface SmsDetection {
@@ -166,6 +172,8 @@ export interface AppSettings {
   currency: string;
   colorScheme: 'light' | 'dark' | 'system';
   remindersEnabled: boolean;
+  /** Oculta el patrimonio del inicio. El ojo de esa tarjeta lo alterna. */
+  balancesHidden: boolean;
   /** IDs de presets en bankSources (wallet, bancolombia, nu, …). */
   enabledBankSourceIds: string[];
   /** Short codes / remitentes SMS activos (derivados + editables). */

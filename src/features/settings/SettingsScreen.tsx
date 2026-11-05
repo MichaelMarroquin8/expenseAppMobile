@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
@@ -8,6 +8,7 @@ import { PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { findCurrency, formatCurrencyLabel } from '../../core/constants/currencies';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
 import { BANK_SOURCE_PRESETS } from '../../domain/bankSources';
+import { backupToJson, transactionsToCsv } from '../../domain/exportFinance';
 import { AuthForm } from '../auth/AuthScreen';
 import { useAuth } from '../auth/AuthProvider';
 import { clearNativeRejectionLog } from '../sms/androidNotificationAuto';
@@ -24,7 +25,6 @@ const MODULES = [
   { label: 'Cuentas', route: 'Accounts' },
   { label: 'Tarjetas', route: 'Cards' },
   { label: 'Categorías', route: 'Categories' },
-  { label: 'Reportes', route: 'Reports' },
   { label: 'Presupuestos', route: 'Budgets' },
   { label: 'Metas de ahorro', route: 'Goals' },
 ] as const;
@@ -244,7 +244,9 @@ export function SettingsScreen() {
           <View style={styles.navRow}>
             <View style={styles.navText}>
               <Text style={[styles.title, { color: theme.text }]}>Recordatorios</Text>
-              <Text style={[styles.note, { color: theme.textMuted }]}>Avisos locales de la app</Text>
+              <Text style={[styles.note, { color: theme.textMuted }]}>
+                En el inicio: corte, pago, presupuesto y metas
+              </Text>
             </View>
             <Switch
               value={settings.remindersEnabled}
@@ -493,6 +495,53 @@ export function SettingsScreen() {
           ) : null}
           </>
           ) : null}
+        </PremiumCard>
+
+        <PremiumCard>
+          <Text style={[styles.title, { color: theme.text }]}>Tus datos</Text>
+          <Text style={[styles.note, { color: theme.textMuted }]}>
+            Comparte un CSV de movimientos o un respaldo JSON. Sirve para guardar una copia fuera del teléfono.
+          </Text>
+          <Pressable
+            android_ripple={null}
+            style={styles.textAction}
+            onPress={() => {
+              const state = useFinanceStore.getState();
+              const csv = transactionsToCsv(state.transactions, state.accounts);
+              void Share.share({ title: 'Movimientos', message: csv }).catch(() => {
+                Alert.alert('Exportar', 'No se pudieron compartir los movimientos.');
+              });
+            }}
+          >
+            <Text style={[styles.textActionLabel, { color: theme.primary }]}>Exportar movimientos (CSV)</Text>
+          </Pressable>
+          <Pressable
+            android_ripple={null}
+            style={styles.textAction}
+            onPress={() => {
+              const state = useFinanceStore.getState();
+              const json = backupToJson({
+                exportedAt: new Date().toISOString(),
+                onboardingDone: state.onboardingDone,
+                transactionCategories: state.transactionCategories,
+                incomeCategories: state.incomeCategories,
+                categoryIcons: state.categoryIcons,
+                accounts: state.accounts,
+                receivables: state.receivables,
+                holdings: state.holdings,
+                budgets: state.budgets,
+                goals: state.goals,
+                cards: state.cards,
+                transactions: state.transactions,
+                settings: state.settings,
+              });
+              void Share.share({ title: 'Respaldo ExpenseApp', message: json }).catch(() => {
+                Alert.alert('Exportar', 'No se pudo compartir el respaldo.');
+              });
+            }}
+          >
+            <Text style={[styles.textActionLabel, { color: theme.primary }]}>Exportar respaldo (JSON)</Text>
+          </Pressable>
         </PremiumCard>
 
         <PremiumCard style={styles.flushCard}>

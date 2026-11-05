@@ -27,6 +27,7 @@ import {
   normalizeAccountKind,
 } from '../../domain/accounts';
 import { holdingsForAccount, summarizePositions } from '../../domain/investments';
+import { accountValueInBase, summarizeNetWorth } from '../../domain/netWorth';
 import { AccountKind, FinanceAccount } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
@@ -78,20 +79,8 @@ export function AccountsScreen() {
   );
 
   const valueInBase = useCallback(
-    (account: FinanceAccount): number => {
-      if (!isInvestmentKind(account.kind)) {
-        return toBase(getAccountDisplayValue(account), getAccountDisplayCurrency(account));
-      }
-      const summary = summarizePositions(
-        account,
-        holdings,
-        rates ? (amount, currency) => toBase(amount, currency) : undefined,
-        baseCurrency,
-      );
-      if (summary.mixed && summary.currency === baseCurrency) return summary.amount;
-      return toBase(summary.amount, summary.currency);
-    },
-    [baseCurrency, holdings, rates, toBase],
+    (account: FinanceAccount): number => accountValueInBase(account, holdings, baseCurrency, toBase),
+    [baseCurrency, holdings, toBase],
   );
 
   const displayValue = useCallback(
@@ -114,23 +103,13 @@ export function AccountsScreen() {
   );
 
   const { assetsBase, liabilitiesBase, netWorthBase } = useMemo(() => {
-    let assets = 0;
-    let liabilities = 0;
-    for (const account of accounts) {
-      if (account.excludeFromTotal) continue;
-      const inBase = valueInBase(account);
-      if (isLiabilityKind(account.kind)) {
-        liabilities += inBase;
-      } else {
-        assets += inBase;
-      }
-    }
+    const summary = summarizeNetWorth(accounts, holdings, baseCurrency, toBase, Boolean(rates));
     return {
-      assetsBase: assets,
-      liabilitiesBase: liabilities,
-      netWorthBase: assets - liabilities,
+      assetsBase: summary.assets,
+      liabilitiesBase: summary.liabilities,
+      netWorthBase: summary.net,
     };
-  }, [accounts, valueInBase]);
+  }, [accounts, baseCurrency, holdings, rates, toBase]);
 
   const sections = useMemo((): SectionGroup[] => {
     const map = new Map<AccountKind, FinanceAccount[]>();

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import {
   formatShortDate,
   parseAmountInput,
 } from "../../core/utils/format";
+import { budgetCrossingMessage } from "../../domain/budgets";
 import { extractCardLast4, reconcileDetections, SmsRawInput } from "../../domain/smsParser";
 import { useFinanceStore } from "../../store/useFinanceStore";
 
@@ -33,6 +35,7 @@ export function SmsInboxScreen() {
   const insets = useSafeAreaInsets();
   const detections = useFinanceStore((state) => state.smsDetections);
   const transactions = useFinanceStore((state) => state.transactions);
+  const budgets = useFinanceStore((state) => state.budgets);
   const currency = useFinanceStore((state) => state.settings.currency);
   const processSmsBatch = useFinanceStore((state) => state.processSmsBatch);
   const updateSmsDetection = useFinanceStore((state) => state.updateSmsDetection);
@@ -195,11 +198,45 @@ export function SmsInboxScreen() {
                   {resolvedLast4 ? ` (agrega una con terminación ${resolvedLast4})` : ""}
                 </Text>
               )}
+              {item.direction !== "in" && item.amount && item.amount > 0
+                ? (() => {
+                    const budgetWarning = budgetCrossingMessage(
+                      budgets,
+                      transactions,
+                      {
+                        amount: item.amount,
+                        category: item.categoryGuess ?? "Otros",
+                        occurredAt: item.occurredAt ?? new Date().toISOString(),
+                        alreadyIncluded: false,
+                      },
+                      currency,
+                    );
+                    return budgetWarning ? (
+                      <Text style={[styles.meta, { color: theme.warning }]}>{budgetWarning}</Text>
+                    ) : null;
+                  })()
+                : null}
               <View style={styles.actions}>
                 <Pressable
                   style={[styles.actionBtn, { backgroundColor: theme.success }]}
                   disabled={!item.amount || item.amount <= 0}
-                  onPress={() => acceptSms(item.id)}
+                  onPress={() => {
+                    acceptSms(item.id);
+                    if (item.direction === "in" || !item.amount) return;
+                    const state = useFinanceStore.getState();
+                    const message = budgetCrossingMessage(
+                      state.budgets,
+                      state.transactions,
+                      {
+                        amount: item.amount,
+                        category: item.categoryGuess ?? "Otros",
+                        occurredAt: item.occurredAt ?? new Date().toISOString(),
+                        alreadyIncluded: true,
+                      },
+                      state.settings.currency,
+                    );
+                    if (message) Alert.alert("Presupuesto", message);
+                  }}
                 >
                   <Text style={[styles.actionText, { color: theme.surface }]}>Confirmar</Text>
                 </Pressable>

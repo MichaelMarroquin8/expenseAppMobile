@@ -16,6 +16,7 @@ import {
   parseWalletNotification,
 } from '../domain/notificationParser';
 import { clampAccountBalance, isInvestmentKind, isLiabilityKind, isReceivableKind } from '../domain/accounts';
+import { applyMonthlyGoalContributions, catchUpRecurring } from '../domain/automations';
 import {
   absorbLegacyPositions,
   normalizeInvestmentHolding,
@@ -147,6 +148,8 @@ interface FinanceState {
   smsDetections: SmsDetection[];
   settings: AppSettings;
   finishOnboarding: () => void;
+  /** Genera recurrencias vencidas y aplica el aporte mensual de las metas. */
+  catchUpAutomations: () => void;
   addTransaction: (payload: Omit<Transaction, 'id'>) => void;
   addTransactionCategory: (category: string, kind?: CategoryKind) => void;
   removeTransactionCategory: (category: string, kind?: CategoryKind) => void;
@@ -282,6 +285,7 @@ const initialSettings: AppSettings = {
   currency: 'COP',
   colorScheme: 'system',
   remindersEnabled: true,
+  balancesHidden: false,
   enabledBankSourceIds: [...DEFAULT_ENABLED_BANK_SOURCE_IDS],
   bankSmsShortCodes: [...DEFAULT_BANK_SMS_SHORT_CODES],
   notificationPackages: [...DEFAULT_NOTIFICATION_PACKAGES],
@@ -384,6 +388,28 @@ export const useFinanceStore = create<FinanceState>()(
       smsDetections: [],
       settings: initialSettings,
       finishOnboarding: () => set({ onboardingDone: true }),
+      catchUpAutomations: () =>
+        set((state) => {
+          const recurring = catchUpRecurring(state.transactions);
+          let accounts = state.accounts;
+          for (const tx of recurring.created) {
+            accounts = applyAccountMovement(accounts, tx, 'apply');
+          }
+          const goals = applyMonthlyGoalContributions(state.goals);
+          if (
+            recurring.created.length === 0 &&
+            recurring.transactions === state.transactions &&
+            goals === state.goals
+          ) {
+            return state;
+          }
+          return {
+            transactions: recurring.transactions,
+            accounts,
+            goals,
+            smsDetections: reconcileDetections(state.smsDetections, recurring.transactions),
+          };
+        }),
       addTransaction: (payload) =>
         set((state) => {
           const transactions = [{ ...payload, id: createId('tx') }, ...state.transactions];
@@ -828,6 +854,7 @@ export const useFinanceStore = create<FinanceState>()(
             persistedSettings.remindersEnabled,
             currentState.settings.remindersEnabled,
           ),
+          balancesHidden: coerceBoolean(persistedSettings.balancesHidden, false),
           enabledBankSourceIds: resolved.enabledIds,
           bankSmsShortCodes:
             Array.isArray(persistedSettings.bankSmsShortCodes) &&

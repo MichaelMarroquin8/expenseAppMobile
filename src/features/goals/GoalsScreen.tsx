@@ -2,9 +2,18 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeScroll } from '../../components/KeyboardSafeScroll';
+import { DateField } from '../../components/DateField';
 import { Field, PremiumCard, Screen, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatAmountInput, formatMoney, getCurrencyFractionDigits, parseAmountInput } from '../../core/utils/format';
+import {
+  dateInputToIso,
+  formatAmountInput,
+  formatCalendarDate,
+  formatMoney,
+  getCurrencyFractionDigits,
+  monthKey,
+  parseAmountInput,
+} from '../../core/utils/format';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
 export function GoalsScreen() {
@@ -19,6 +28,7 @@ export function GoalsScreen() {
   const [title, setTitle] = useState('');
   const [targetRaw, setTargetRaw] = useState('');
   const [autoRaw, setAutoRaw] = useState('');
+  const [targetInput, setTargetInput] = useState('');
 
   const quickAmounts = getCurrencyFractionDigits(currency) === 0 ? [20000, 50000, 100000] : [25, 50, 100];
 
@@ -33,11 +43,14 @@ export function GoalsScreen() {
       title: normalizedTitle,
       targetAmount,
       currentAmount: 0,
+      targetDate: dateInputToIso(targetInput) ?? undefined,
       autoContribution: autoContribution > 0 ? autoContribution : undefined,
+      lastAutoAppliedMonth: autoContribution > 0 ? monthKey() : undefined,
     });
     setTitle('');
     setTargetRaw('');
     setAutoRaw('');
+    setTargetInput('');
   };
 
   return (
@@ -45,7 +58,10 @@ export function GoalsScreen() {
       <KeyboardSafeScroll
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 170, 190) }]}
       >
-        <SectionTitle title="Metas de ahorro" subtitle="Crea objetivos y registra aportes manuales o automáticos" />
+        <SectionTitle
+          title="Metas de ahorro"
+          subtitle="El aporte mensual entra solo al abrir la app en un mes nuevo"
+        />
 
         <PremiumCard>
           <Text style={[styles.formTitle, { color: theme.text }]}>Nueva meta de ahorro</Text>
@@ -74,6 +90,15 @@ export function GoalsScreen() {
             keyboardAppearance={activeMode === 'dark' ? 'dark' : 'light'}
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
+          <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+            Fecha límite, opcional. Avisa en el inicio 14 días antes.
+          </Text>
+          <DateField value={targetInput} onChange={setTargetInput} accessibilityLabel="Fecha límite de la meta" />
+          {targetInput ? (
+            <Pressable onPress={() => setTargetInput('')} style={styles.clearDate}>
+              <Text style={[styles.deleteText, { color: theme.textMuted }]}>Quitar fecha</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={[styles.saveButton, { backgroundColor: theme.primary }]} onPress={onCreateGoal}>
             <Text style={styles.saveButtonText}>Crear meta</Text>
           </Pressable>
@@ -112,6 +137,11 @@ export function GoalsScreen() {
                   </Pressable>
                 ))}
               </View>
+              {goal.targetDate ? (
+                <Text style={[styles.autoText, { color: theme.textMuted }]}>
+                  Fecha límite: {formatCalendarDate(goal.targetDate)}
+                </Text>
+              ) : null}
               {goal.autoContribution ? (
                 <Text style={[styles.autoText, { color: theme.success }]}>
                   Aporte automático: {formatMoney(goal.autoContribution, currency)} / mes
@@ -138,7 +168,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
-  saveButton: {
+  fieldLabel: { fontSize: 12, marginBottom: 6 },
+  clearDate: { marginTop: 6, alignSelf: 'flex-start' },
+  saveButton: { marginTop: 12,
     borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 12,
