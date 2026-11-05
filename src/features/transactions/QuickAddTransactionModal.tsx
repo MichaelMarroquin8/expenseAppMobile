@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   Alert,
   Animated,
+  BackHandler,
   Easing,
   Keyboard,
   KeyboardAvoidingView,
@@ -170,12 +171,16 @@ export function QuickAddTransactionModal({
   const [entryCurrency, setEntryCurrency] = useState(defaultCurrency);
   const [recurringRule, setRecurringRule] = useState<Transaction['recurringRule']>(undefined);
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const [categoryDeleteOpen, setCategoryDeleteOpen] = useState(false);
   const [rates, setRates] = useState<Record<string, number> | null>(null);
   const keypadAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setAccountSheetOpen(false);
+      return;
+    }
     if (editingTransaction) {
       const txDate = new Date(editingTransaction.occurredAt);
       const validDate = Number.isNaN(txDate.getTime()) ? new Date() : txDate;
@@ -267,6 +272,16 @@ export function QuickAddTransactionModal({
       cancelled = true;
     };
   }, [open, entryCurrency, defaultCurrency]);
+
+  useEffect(() => {
+    if (!accountSheetOpen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setAccountSheetOpen(false);
+      if (type === 'transfer') setTransferSlot(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [accountSheetOpen, type]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -511,6 +526,7 @@ export function QuickAddTransactionModal({
     if (option === type) return;
     setType(option);
     setDeleteArmed(false);
+    setAccountSheetOpen(false);
     if (option === 'transfer') {
       setStep('amount');
       setTransferSlot(null);
@@ -579,9 +595,15 @@ export function QuickAddTransactionModal({
     'ellipse-outline';
 
   const onHeaderLeft = () => {
+    if (accountSheetOpen) {
+      setAccountSheetOpen(false);
+      if (type === 'transfer') setTransferSlot(null);
+      return;
+    }
     if (step === 'amount' && type !== 'transfer' && !editingTransaction) {
       Keyboard.dismiss();
       setDeleteArmed(false);
+      setAccountSheetOpen(false);
       setStep('category');
       return;
     }
@@ -634,11 +656,34 @@ export function QuickAddTransactionModal({
   const transferPickerAccounts = (transferSlot === 'source' ? sourceAccounts : destinationAccounts).filter(
     (account) => account.id !== (transferSlot === 'source' ? destinationAccountId : accountId),
   );
+  const selectedSource = sourceAccounts.find((account) => account.id === accountId);
+  const sheetAccounts = type === 'transfer' ? transferPickerAccounts : sourceAccounts;
+  const sheetSelectedId =
+    type === 'transfer' ? (transferSlot === 'destination' ? destinationAccountId : accountId) : accountId;
+  const sheetTitle =
+    type === 'transfer' ? (transferSlot === 'destination' ? '¿A dónde va?' : '¿De dónde sale?') : 'Cuentas';
+  const sheetEmpty =
+    type === 'transfer'
+      ? accounts.length < 2
+        ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
+        : transferSlot === 'source'
+          ? 'No hay una cuenta de origen válida.'
+          : 'Agrega otra cuenta para elegir el destino.'
+      : accounts.length === 0
+        ? 'Sin cuentas registradas. El movimiento se guardará sin cuenta.'
+        : type === 'expense'
+          ? 'Ninguna cuenta puede pagar este gasto. Inversiones y deudas no salen aquí.'
+          : 'Ninguna cuenta puede recibir este ingreso.';
 
   const chooseTransferAccount = (id: string) => {
     if (transferSlot === 'destination') {
       setDestinationAccountId(id);
-      setTransferSlot(accountId ? null : 'source');
+      if (!accountId) {
+        setTransferSlot('source');
+        return;
+      }
+      setTransferSlot(null);
+      setAccountSheetOpen(false);
       return;
     }
     setAccountId(id);
@@ -647,7 +692,26 @@ export function QuickAddTransactionModal({
       setTransferSlot('destination');
       return;
     }
-    setTransferSlot(destinationAccountId ? null : 'destination');
+    if (!destinationAccountId) {
+      setTransferSlot('destination');
+      return;
+    }
+    setTransferSlot(null);
+    setAccountSheetOpen(false);
+  };
+
+  const dismissAccountSheet = () => {
+    setAccountSheetOpen(false);
+    if (type === 'transfer') setTransferSlot(null);
+  };
+
+  const selectAccountFromSheet = (id: string) => {
+    if (type === 'transfer') {
+      chooseTransferAccount(id);
+      return;
+    }
+    setAccountId(id);
+    setAccountSheetOpen(false);
   };
 
   const renderTransferSlot = (slot: 'source' | 'destination') => {
@@ -656,7 +720,10 @@ export function QuickAddTransactionModal({
     const active = transferSlot === slot;
     return (
       <Pressable
-        onPress={() => setTransferSlot(slot)}
+        onPress={() => {
+          setTransferSlot(slot);
+          setAccountSheetOpen(true);
+        }}
         accessibilityRole="button"
         accessibilityLabel={
           account
@@ -883,53 +950,6 @@ export function QuickAddTransactionModal({
                   {renderTransferSlot('destination')}
                 </View>
               ) : null}
-              {type === 'transfer' && transferSlot ? (
-                <View style={styles.transferPicker}>
-                  <Text style={[styles.blockTitle, { color: theme.text }]}>
-                    {transferSlot === 'source' ? '¿De dónde sale?' : '¿A dónde va?'}
-                  </Text>
-                  {transferPickerAccounts.length === 0 ? (
-                    <Text style={[styles.bannerHint, { color: theme.textMuted }]}>
-                      {accounts.length < 2
-                        ? 'Crea al menos 2 cuentas en Más > Cuentas para registrar transferencias.'
-                        : transferSlot === 'source'
-                          ? 'No hay una cuenta de origen válida.'
-                          : 'Agrega otra cuenta para elegir el destino.'}
-                    </Text>
-                  ) : (
-                    transferPickerAccounts.map((account) => {
-                      const selected =
-                        (transferSlot === 'source' ? accountId : destinationAccountId) === account.id;
-                      const iconName = (account.icon ??
-                        defaultIconForKind(account.kind)) as keyof typeof Ionicons.glyphMap;
-                      return (
-                        <Pressable
-                          key={account.id}
-                          onPress={() => chooseTransferAccount(account.id)}
-                          style={[
-                            styles.transferOption,
-                            { borderColor: selected ? theme.primary : theme.border, backgroundColor: theme.card },
-                            selected && { backgroundColor: `${theme.primary}14` },
-                          ]}
-                        >
-                          <View style={[styles.transferOptionIcon, { backgroundColor: account.color || theme.primary }]}>
-                            <Ionicons name={iconName} size={18} color="#fff" />
-                          </View>
-                          <View style={styles.transferOptionBody}>
-                            <Text style={[styles.transferOptionName, { color: theme.text }]} numberOfLines={1}>
-                              {account.name}
-                            </Text>
-                            <Text style={[styles.transferBalance, { color: theme.textMuted }]} numberOfLines={1}>
-                              {isLiabilityKind(account.kind) ? 'Dinero que debo · ' : ''}
-                              {accountMoneyLabel(account, holdings)}
-                            </Text>
-                          </View>
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </View>
-              ) : null}
               {type === 'transfer' && !transferSlot && !transferReady ? (
                 <Text style={[styles.stepHint, { color: theme.textMuted }]}>
                   Toca un cuadro para elegir de dónde sale y a dónde va.
@@ -1021,11 +1041,6 @@ export function QuickAddTransactionModal({
               <Text style={[styles.blockTitle, { color: theme.text }]}>
                 {type === 'expense' ? 'Sale de' : 'Entra a'}
               </Text>
-              <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 6 }]}>
-                {type === 'expense'
-                  ? 'Efectivo, banco, débito, billetera y tarjetas de crédito.'
-                  : 'Solo cuentas donde puede entrar plata.'}
-              </Text>
               {sourceAccounts.length === 0 ? (
                 <Text style={[styles.bannerHint, { color: theme.textMuted, marginBottom: 8 }]}>
                   {accounts.length === 0
@@ -1035,21 +1050,50 @@ export function QuickAddTransactionModal({
                       : 'Ninguna cuenta puede recibir este ingreso.'}
                 </Text>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-                  {sourceAccounts.map((account) => (
-                    <Pressable
-                      key={account.id}
-                      style={[
-                        styles.chip,
-                        { borderColor: theme.border },
-                        accountId === account.id && { borderColor: theme.primary, backgroundColor: `${theme.primary}20` },
-                      ]}
-                      onPress={() => setAccountId(account.id)}
+                <Pressable
+                  onPress={() => setAccountSheetOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selectedSource
+                      ? `${type === 'expense' ? 'Sale de' : 'Entra a'} ${selectedSource.name}. Toca para cambiarla`
+                      : 'Elegir cuenta'
+                  }
+                  style={[styles.accountTrigger, { backgroundColor: theme.card, borderColor: theme.border }]}
+                >
+                  {selectedSource ? (
+                    <View style={[styles.accountGlyph, { backgroundColor: selectedSource.color || theme.primary }]}>
+                      <Ionicons
+                        name={
+                          (selectedSource.icon ??
+                            defaultIconForKind(selectedSource.kind)) as keyof typeof Ionicons.glyphMap
+                        }
+                        size={22}
+                        color="#fff"
+                      />
+                    </View>
+                  ) : (
+                    <View style={[styles.accountGlyph, { backgroundColor: `${theme.textMuted}22` }]}>
+                      <Ionicons name="wallet-outline" size={22} color={theme.textMuted} />
+                    </View>
+                  )}
+                  <View style={styles.accountTriggerBody}>
+                    <Text
+                      style={[styles.accountTriggerName, { color: selectedSource ? theme.text : theme.textMuted }]}
+                      numberOfLines={1}
                     >
-                      <Text style={[styles.chipLabel, { color: theme.text }]}>{account.name}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
+                      {selectedSource?.name ?? 'Elegir cuenta'}
+                    </Text>
+                    {selectedSource && isLiabilityKind(selectedSource.kind) ? (
+                      <Text style={[styles.accountSheetMeta, { color: theme.textMuted }]}>Dinero que debo</Text>
+                    ) : null}
+                  </View>
+                  {selectedSource ? (
+                    <Text style={[styles.accountTriggerBalance, { color: theme.text }]} numberOfLines={1}>
+                      {accountMoneyLabel(selectedSource, holdings)}
+                    </Text>
+                  ) : null}
+                  <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+                </Pressable>
               )}
               </>
               ) : null}
@@ -1224,6 +1268,88 @@ export function QuickAddTransactionModal({
             setAmountRaw((prev) => parseAmountInput(prev, code));
           }}
         />
+
+        {accountSheetOpen && step === 'amount' ? (
+          <View style={[StyleSheet.absoluteFill, styles.accountSheetOverlay]}>
+            <Pressable
+              style={styles.accountSheetBackdrop}
+              onPress={dismissAccountSheet}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar"
+            />
+            <View
+              style={[
+                styles.accountSheet,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  paddingBottom: Math.max(insets.bottom, 16),
+                },
+              ]}
+            >
+              <View style={styles.accountSheetHeader}>
+                <Pressable
+                  onPress={dismissAccountSheet}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar cuentas"
+                  style={styles.accountSheetClose}
+                >
+                  <Ionicons name="close" size={22} color={theme.text} />
+                </Pressable>
+                <Text
+                  style={[styles.accountSheetTitle, { color: theme.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  {sheetTitle}
+                </Text>
+                <View style={styles.accountSheetClose} />
+              </View>
+              {sheetAccounts.length === 0 ? (
+                <Text style={[styles.bannerHint, { color: theme.textMuted, marginTop: 8 }]}>{sheetEmpty}</Text>
+              ) : (
+                <ScrollView
+                  style={styles.accountSheetList}
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
+                >
+                  {sheetAccounts.map((account) => {
+                    const selected = sheetSelectedId === account.id;
+                    const iconName = (account.icon ??
+                      defaultIconForKind(account.kind)) as keyof typeof Ionicons.glyphMap;
+                    return (
+                      <Pressable
+                        key={account.id}
+                        onPress={() => selectAccountFromSheet(account.id)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`${account.name}, ${accountMoneyLabel(account, holdings)}`}
+                        style={[styles.accountSheetRow, selected && { backgroundColor: `${theme.primary}14` }]}
+                      >
+                        <View style={[styles.accountGlyph, { backgroundColor: account.color || theme.primary }]}>
+                          <Ionicons name={iconName} size={22} color="#fff" />
+                        </View>
+                        <Text style={[styles.accountSheetName, { color: theme.text }]} numberOfLines={1}>
+                          {account.name}
+                        </Text>
+                        <View style={styles.accountSheetMoney}>
+                          {isLiabilityKind(account.kind) ? (
+                            <Text style={[styles.accountSheetMeta, { color: theme.textMuted }]}>Dinero que debo</Text>
+                          ) : null}
+                          <Text style={[styles.accountSheetBalance, { color: theme.text }]} numberOfLines={1}>
+                            {accountMoneyLabel(account, holdings)}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        ) : null}
 
         <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
           <Pressable style={styles.calendarOverlay} onPress={() => setShowCalendar(false)}>
@@ -1420,30 +1546,96 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  transferPicker: {
-    marginBottom: 8,
-  },
-  transferOption: {
+  accountTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
+    borderRadius: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
   },
-  transferOptionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  accountTriggerBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  accountTriggerName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  accountTriggerBalance: {
+    fontSize: 15,
+    fontWeight: '700',
+    maxWidth: '38%',
+  },
+  accountGlyph: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  transferOptionBody: {
-    flex: 1,
+  accountSheetOverlay: {
+    justifyContent: 'flex-end',
+    zIndex: 20,
   },
-  transferOptionName: {
+  accountSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.55)',
+  },
+  accountSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    maxHeight: '72%',
+  },
+  accountSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  accountSheetClose: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountSheetTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  accountSheetList: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  accountSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  accountSheetName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  accountSheetMoney: {
+    alignItems: 'flex-end',
+    maxWidth: '46%',
+  },
+  accountSheetMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  accountSheetBalance: {
     fontSize: 15,
     fontWeight: '700',
   },

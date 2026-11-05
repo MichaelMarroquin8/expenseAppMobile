@@ -197,6 +197,33 @@ export const formatQuantity = (value: number, maxDecimals = QUANTITY_MAX_DECIMAL
   }).format(value);
 };
 
+export const formatShares = (quantity: number): string =>
+  `${formatQuantity(quantity)} ${quantity === 1 ? 'acción' : 'acciones'}`;
+
+/** Porcentaje con signo, por ejemplo +2,93% o −5,48%. */
+export const formatSignedPercent = (percent: number): string => {
+  if (!Number.isFinite(percent)) return '0%';
+  const abs = new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(percent));
+  if (percent > 0) return `+${abs}%`;
+  if (percent < 0) return `−${abs}%`;
+  return `${abs}%`;
+};
+
+export const amountToRaw = (amount: number, currency = 'COP'): string => {
+  if (!Number.isFinite(amount)) return '';
+  const digits = getCurrencyFractionDigits(currency);
+  if (digits === 0) return String(Math.round(amount));
+  return amount.toFixed(digits);
+};
+
+export const sameMoney = (left: number, right: number, currency = 'COP'): boolean => {
+  const factor = 10 ** getCurrencyFractionDigits(currency);
+  return Math.round(left * factor) === Math.round(right * factor);
+};
+
 export const formatShortDate = (isoDate: string): string =>
   new Intl.DateTimeFormat('es-MX', {
     day: '2-digit',

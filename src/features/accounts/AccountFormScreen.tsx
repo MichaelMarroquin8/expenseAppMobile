@@ -322,7 +322,7 @@ export function AccountFormScreen() {
           ) : null}
           {investmentMode ? (
             <Text style={[styles.hint, { color: theme.textMuted }]}>
-              Esta cuenta es el bróker, por ejemplo Hapi, XTB o Trii. Las acciones y las fracciones se agregan dentro, al abrirla.
+              Esta cuenta es el bróker, por ejemplo Hapi o Trii. Al abrirla anotas cada acción como sale en la app: en Hapi, las fracciones y el valor de la derecha; en Trii, las acciones, lo invertido y el %.
             </Text>
           ) : null}
 
@@ -353,7 +353,7 @@ export function AccountFormScreen() {
           {investmentMode ? (
             <>
               <Text style={[styles.hint, { color: theme.textMuted }]}>
-                El valor de la cuenta es la suma de sus acciones. Guarda y ábrela para anotar cada ticker y su cantidad.
+                El valor de la cuenta es lo que valen hoy sus acciones. Trii va en pesos (COP) y Hapi en dólares (USD). Guarda y ábrela para anotar cada una.
               </Text>
               {existing && isInvestmentKind(existing.kind) ? (
                 <Pressable

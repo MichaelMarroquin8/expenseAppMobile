@@ -22,6 +22,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           add(BancolombiaSmsBridgePackage())
           add(NotificationBridgePackage())
+          add(CapturePromptPackage())
         },
       useDevSupport = BuildConfig.DEBUG,
     )

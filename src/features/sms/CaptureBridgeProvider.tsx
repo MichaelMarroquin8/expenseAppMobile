@@ -33,6 +33,19 @@ import {
   subscribeBankSms,
   syncNativeSmsShortCodes,
 } from "./androidSmsAuto";
+import {
+  areCapturePromptsEnabled,
+  buildCapturePrompt,
+  dismissCapturePrompts,
+  drainAndApplyCapturePrompts,
+  isAndroidCapturePromptAvailable,
+  isPromptableDetection,
+  isRecentCaptureDetection,
+  requestCapturePromptPermission,
+  showCapturePrompt,
+  subscribeCapturePromptActions,
+  type CapturePromptAction,
+} from "./androidCapturePrompt";
 
 interface CaptureBridgeValue {
   notifAvailable: boolean;
@@ -64,6 +77,8 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
   const backgroundSyncEnabled = useFinanceStore((state) => state.settings.backgroundSyncEnabled);
   const processSmsBatch = useFinanceStore((state) => state.processSmsBatch);
   const processNotificationBatch = useFinanceStore((state) => state.processNotificationBatch);
+  const currency = useFinanceStore((state) => state.settings.currency);
+  const smsDetections = useFinanceStore((state) => state.smsDetections);
 
   const [walletAccess, setWalletAccess] = useState(false);
   const [walletListening, setWalletListening] = useState(false);
@@ -79,6 +94,11 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
 
   const smsSinceRef = useRef<number | undefined>(undefined);
   const walletSinceRef = useRef<number | undefined>(undefined);
+  const promptBaselineRef = useRef<Set<string> | null>(null);
+  const promptedIdsRef = useRef<Set<string>>(new Set());
+  const promptingIdsRef = useRef<Set<string>>(new Set());
+  const promptPermissionAskedRef = useRef(false);
+  const [promptTick, setPromptTick] = useState(0);
   const [settingsReady, setSettingsReady] = useState(() => useFinanceStore.persist.hasHydrated());
 
   const notifAvailable = isAndroidNotificationAutoAvailable();
@@ -183,6 +203,7 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
     }
     setWalletAccess(true);
     setWalletListening(true);
+    void requestCapturePromptPermission();
     await runWalletSync();
   }, [notifAvailable, runWalletSync]);
 
@@ -198,6 +219,7 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
       return;
     }
     setSmsEnabled(true);
+    void requestCapturePromptPermission();
     await runSmsSync();
   }, [smsAvailable, runSmsSync]);
 
@@ -212,11 +234,14 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
       // Si el puente nativo no responde, igual se intenta leer con la lista anterior.
     }
 
+    let captureOn = false;
+
     if (notifAvailable) {
       try {
         const enabled = await isNotificationAccessEnabled();
         setWalletAccess(enabled);
         if (enabled) {
+          captureOn = true;
           setWalletError(null);
           setWalletListening(true);
           await runWalletSync();
@@ -232,6 +257,7 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
       try {
         const granted = await hasAndroidSmsPermissions();
         if (granted) {
+          captureOn = true;
           setSmsError(null);
           setSmsEnabled(true);
           await runSmsSync();
@@ -241,6 +267,18 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
       } catch {
         setSmsError("No se pudo comprobar el permiso de SMS.");
       }
+    }
+
+    if (
+      captureOn &&
+      isAndroidCapturePromptAvailable() &&
+      AppState.currentState === "active" &&
+      !promptPermissionAskedRef.current
+    ) {
+      promptPermissionAskedRef.current = true;
+      void requestCapturePromptPermission().finally(() => {
+        setPromptTick((tick) => tick + 1);
+      });
     }
 
     await refreshStatus();
@@ -307,6 +345,98 @@ export function CaptureBridgeProvider({ children }: { children: React.ReactNode 
       clearInterval(timer);
     };
   }, [smsEnabled, smsAvailable, processSmsBatch, runSmsSync]);
+
+  const applyPromptAction = useCallback((action: CapturePromptAction) => {
+    const state = useFinanceStore.getState();
+    const detection = state.smsDetections.find((item) => item.id === action.id);
+    if (!detection || detection.status !== "pending" || detection.duplicate) return;
+    if (!detection.amount || detection.amount <= 0) return;
+    if (action.action === "accept") state.acceptSms(detection.id);
+    else state.discardSms(detection.id);
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") setPromptTick((tick) => tick + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!settingsReady || !isAndroidCapturePromptAvailable()) return;
+    const apply = () => drainAndApplyCapturePrompts(applyPromptAction);
+    void apply();
+    const unsubscribe = subscribeCapturePromptActions(() => {
+      void apply();
+    });
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void apply();
+    });
+    return () => {
+      unsubscribe();
+      sub.remove();
+    };
+  }, [settingsReady, applyPromptAction]);
+
+  useEffect(() => {
+    if (!settingsReady || !isAndroidCapturePromptAvailable()) return;
+    if (promptBaselineRef.current === null) {
+      promptBaselineRef.current = new Set(smsDetections.map((item) => item.id));
+      return;
+    }
+
+    const baseline = promptBaselineRef.current;
+    const pendingIds = new Set(
+      smsDetections.filter((item) => item.status === "pending").map((item) => item.id),
+    );
+    const stale = [...promptedIdsRef.current].filter((id) => !pendingIds.has(id));
+    if (stale.length > 0) {
+      stale.forEach((id) => promptedIdsRef.current.delete(id));
+      void dismissCapturePrompts(stale);
+    }
+
+    const fresh = smsDetections.filter((item) => {
+      if (baseline.has(item.id) || promptedIdsRef.current.has(item.id) || promptingIdsRef.current.has(item.id)) {
+        return false;
+      }
+      if (!isPromptableDetection(item) || !isRecentCaptureDetection(item)) {
+        baseline.add(item.id);
+        return false;
+      }
+      return true;
+    });
+    if (fresh.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      let allowed = await areCapturePromptsEnabled();
+      if (!allowed) {
+        if (cancelled || AppState.currentState !== "active" || promptPermissionAskedRef.current) return;
+        promptPermissionAskedRef.current = true;
+        allowed = await requestCapturePromptPermission();
+      }
+      if (!allowed || cancelled) return;
+      for (const detection of fresh) {
+        if (cancelled) return;
+        const prompt = buildCapturePrompt(detection, currency);
+        if (!prompt) {
+          baseline.add(detection.id);
+          continue;
+        }
+        promptingIdsRef.current.add(detection.id);
+        try {
+          const posted = await showCapturePrompt(prompt);
+          if (posted) promptedIdsRef.current.add(detection.id);
+        } finally {
+          promptingIdsRef.current.delete(detection.id);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsReady, smsDetections, currency, promptTick]);
 
   const value = useMemo<CaptureBridgeValue>(
     () => ({

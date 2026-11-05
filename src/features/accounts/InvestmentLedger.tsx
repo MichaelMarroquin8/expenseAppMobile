@@ -5,8 +5,8 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { fetchQuotes } from '../../backend/marketQuotes';
 import { PremiumCard, SectionTitle } from '../../components/ui';
 import { useAppTheme } from '../../core/theme/ThemeProvider';
-import { formatMoney, formatQuantity, formatShortDate } from '../../core/utils/format';
-import { holdingMarketValue, holdingsForAccount } from '../../domain/investments';
+import { formatMoney, formatShares, formatShortDate, formatSignedPercent } from '../../core/utils/format';
+import { holdingGain, holdingMarketValue, holdingsForAccount } from '../../domain/investments';
 import { FinanceAccount, InvestmentHolding } from '../../domain/models';
 import { useFinanceStore } from '../../store/useFinanceStore';
 
@@ -39,7 +39,7 @@ export function InvestmentLedger({ account }: { account: FinanceAccount }) {
       if (failed.length > 0) {
         Alert.alert(
           'Precios parciales',
-          `No se pudo actualizar: ${failed.map((item) => item.symbol).join(', ')}`,
+          `No se pudo actualizar: ${failed.map((item) => item.symbol).join(', ')}. Si son de Trii, abre la acción y usa Invertí y %.`,
         );
       }
     } catch (error) {
@@ -56,12 +56,12 @@ export function InvestmentLedger({ account }: { account: FinanceAccount }) {
     <View>
       <SectionTitle
         title="Acciones"
-        subtitle="Lo que compraste en esta cuenta, incluidas las fracciones"
+        subtitle="La cantidad y el monto, como salen en Hapi o Trii"
       />
 
       {positions.length === 0 ? (
         <Text style={[styles.empty, { color: theme.textMuted }]}>
-          Todavía no hay acciones. Agrega cada compra de esta cuenta, por ejemplo 0,25 de VOO en Hapi.
+          Todavía no hay acciones. En Hapi anota las fracciones y el valor de la derecha. En Trii, las acciones, lo invertido y el %.
         </Text>
       ) : (
         positions.map((holding) => (
@@ -105,15 +105,16 @@ export function InvestmentLedger({ account }: { account: FinanceAccount }) {
 function HoldingRow({ holding, onPress }: { holding: InvestmentHolding; onPress: () => void }) {
   const { theme } = useAppTheme();
   const value = holdingMarketValue(holding);
+  const gain = holdingGain(holding);
   const currency = holding.priceCurrency || 'USD';
-  const fraction = holding.quantity > 0 && holding.quantity < 1;
   const title = holding.name && holding.name.toUpperCase() !== holding.symbol ? holding.name : holding.symbol;
+  const gainColor = gain == null ? theme.textMuted : gain.amount < 0 ? theme.danger : theme.success;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${holding.symbol}, ${formatQuantity(holding.quantity)} acciones`}
+      accessibilityLabel={`${holding.symbol}, ${formatShares(holding.quantity)}`}
     >
       <PremiumCard>
         <View style={styles.row}>
@@ -127,11 +128,14 @@ function HoldingRow({ holding, onPress }: { holding: InvestmentHolding; onPress:
               {title}
             </Text>
             <Text style={[styles.meta, { color: theme.textMuted }]} numberOfLines={1}>
-              {formatQuantity(holding.quantity)} × {holding.symbol}
-              {fraction ? ' · Fracción' : ''}
-              {holding.lastPrice != null ? ` · ${formatMoney(holding.lastPrice, currency)}` : ' · Sin precio'}
+              {formatShares(holding.quantity)}
+              {holding.lastPrice != null ? ` · c/u ${formatMoney(holding.lastPrice, currency)}` : ' · Sin valor'}
             </Text>
-            {holding.priceUpdatedAt ? (
+            {holding.costBasis != null ? (
+              <Text style={[styles.meta, { color: theme.textMuted }]} numberOfLines={1}>
+                Invertiste {formatMoney(holding.costBasis, currency)}
+              </Text>
+            ) : holding.priceUpdatedAt ? (
               <Text style={[styles.meta, { color: theme.textMuted }]}>
                 Precio del {formatShortDate(holding.priceUpdatedAt)}
               </Text>
@@ -141,6 +145,9 @@ function HoldingRow({ holding, onPress }: { holding: InvestmentHolding; onPress:
             <Text style={[styles.value, { color: theme.text }]}>
               {value == null ? '—' : formatMoney(value, currency)}
             </Text>
+            {gain ? (
+              <Text style={[styles.gain, { color: gainColor }]}>{formatSignedPercent(gain.percent)}</Text>
+            ) : null}
             <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
           </View>
         </View>
@@ -185,4 +192,5 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, marginTop: 2 },
   valueBlock: { alignItems: 'flex-end', gap: 4 },
   value: { fontSize: 14, fontWeight: '800' },
+  gain: { fontSize: 12, fontWeight: '800' },
 });

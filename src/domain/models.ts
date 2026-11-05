@@ -94,11 +94,14 @@ export interface InvestmentHolding {
   accountId: string;
   /** Nombre visible, por ejemplo Apple. Si falta, se muestra el ticker. */
   name: string;
-  /** Ticker de mercado (Yahoo), por ejemplo AAPL, SPY o BTC-USD. */
+  /** Ticker de mercado (Yahoo), por ejemplo AAPL, SPY o BTC-USD. En Trii puede ser CSPXCO o NUCO. */
   symbol: string;
-  /** Acciones enteras o fracción, por ejemplo 0.25. */
+  /** Acciones enteras (2 en Trii) o fracción (0.51179 en Hapi). */
   quantity: number;
+  /** Precio de una acción. Si anotaste el valor de la posición, es valor / cantidad. */
   lastPrice?: number;
+  /** Dinero pagado por toda la posición, en `priceCurrency`. Sirve para la ganancia. */
+  costBasis?: number;
   priceCurrency?: string;
   priceUpdatedAt?: string;
   note?: string;

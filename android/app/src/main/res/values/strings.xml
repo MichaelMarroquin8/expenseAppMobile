@@ -1,5 +1,11 @@
 <resources>
   <string name="app_name">ExpenseApp</string>
+  <string name="capture_prompt_channel_name">Movimientos detectados</string>
+  <string name="capture_prompt_channel_desc">Resumen de un pago visto por SMS o Wallet, con opciones para agregarlo o rechazarlo.</string>
+  <string name="capture_prompt_action_accept">Agregar</string>
+  <string name="capture_prompt_action_reject">Rechazar</string>
+  <string name="capture_prompt_fallback_title">Movimiento detectado</string>
+  <string name="capture_prompt_public_text">Hay un movimiento por confirmar</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
 </resources>

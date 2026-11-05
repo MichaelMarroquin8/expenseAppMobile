@@ -278,7 +278,7 @@ export function SettingsScreen() {
           {detectionOpen ? (
           <>
           <Text style={[styles.note, { color: theme.textMuted, marginBottom: 10 }]}>
-            Elige los bancos. El permiso se concede aquí; los gastos llegan a Pendientes para confirmarlos.
+            Elige los bancos. El permiso se concede aquí. Cada pago nuevo queda en Pendientes y también avisa en las notificaciones del teléfono, con Agregar y Rechazar.
           </Text>
           <View style={styles.row}>
             {BANK_SOURCE_PRESETS.map((preset) => {
